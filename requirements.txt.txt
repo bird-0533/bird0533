@@ -1,0 +1,6 @@
+streamlit
+anthropic
+elevenlabs
+PyPDF2
+duckduckgo-search
+
