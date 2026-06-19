@@ -99,7 +99,7 @@ def get_ai_response(question, api_key, context=""):
         system_prompt += f"\n\n以下のドキュメントの内容に基づいて回答してください：\n\n{context}"
     
     message = client.messages.create(
-        model="claude-3-5-sonnet",
+        model="claude-3-haiku-20240307",
         max_tokens=4000,
         system=system_prompt,
         messages=[{"role": "user", "content": question}]
