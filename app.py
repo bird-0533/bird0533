@@ -11,10 +11,16 @@ import os
 # ====================
 WAKE_WORD = "バード"
 
-# 招待コード（簡易版 - 必要に応じて追加）
-VALID_INVITE_CODES = [
+# 管理者用招待コード
+ADMIN_INVITE_CODES = [
+    "ADMIN_BIRD_2025",      # 管理者用
+]
+
+# 一般ユーザー用招待コード
+USER_INVITE_CODES = [
     "BIRD2024TEST",
     "INVITE123ABC",
+    "EMPLOYEE001",
 ]
 
 # あなたの考え
@@ -46,9 +52,16 @@ MAX_PDF_CHARS = 50000
 # 招待コード認証
 # ====================
 def check_invite_code(code):
-    return code in VALID_INVITE_CODES
+    """招待コードをチェックして、管理者かどうかを返す"""
+    if code in ADMIN_INVITE_CODES:
+        return True, True   # (認証成功, 管理者)
+    elif code in USER_INVITE_CODES:
+        return True, False  # (認証成功, 一般ユーザー)
+    else:
+        return False, False # (認証失敗)
 
 def generate_invite_code():
+    """新しい招待コードを生成"""
     import random
     import string
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
@@ -126,6 +139,8 @@ def synthesize_voice(text, api_key, voice_id):
 def init_session_state():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
+    if "is_admin" not in st.session_state:
+        st.session_state.is_admin = False
     if "mode" not in st.session_state:
         st.session_state.mode = "text"
     if "recognized_text" not in st.session_state:
@@ -180,22 +195,41 @@ def get_speech_recognition_html():
 def show_login_screen():
     st.header("🔐 ログイン")
     
-    with st.expander("管理者用：招待コード生成"):
-        st.write("※この機能はテスト用です。")
-        if st.button("招待コードを生成"):
-            st.success(f"招待コード: {generate_invite_code()}")
-        st.caption("現在の有効なコード:")
-        for code in VALID_INVITE_CODES:
-            st.code(code)
+    # 管理者用：招待コード発行
+    if st.session_state.get("show_admin_panel", False):
+        with st.expander("🔑 管理者用：招待コード発行", expanded=True):
+            st.write("**管理者用招待コード:**")
+            for code in ADMIN_INVITE_CODES:
+                st.code(code)
+            st.write("**一般ユーザー用招待コード:**")
+            for code in USER_INVITE_CODES:
+                st.code(code)
+            st.divider()
+            if st.button("新しい招待コードを生成"):
+                new_code = generate_invite_code()
+                st.success(f"生成されたコード: {new_code}")
+                st.info("このコードをコピペして、USER_INVITE_CODESに追加してください")
+    
+    # 管理者パネル表示用
+    if st.button("管理者オプションを表示"):
+        st.session_state.show_admin_panel = True
+        st.rerun()
     
     st.divider()
     
+    # 招待コード入力
     invite_code = st.text_input("招待コードを入力してください", type="password")
     
     if st.button("認証", type="primary"):
-        if check_invite_code(invite_code):
+        is_valid, is_admin = check_invite_code(invite_code)
+        if is_valid:
             st.session_state.authenticated = True
-            st.success("認証成功！")
+            st.session_state.is_admin = is_admin
+            st.session_state.invite_code = invite_code
+            if is_admin:
+                st.success("管理者として認証成功！")
+            else:
+                st.success("認証成功！")
             st.rerun()
         else:
             st.error("無効な招待コードです")
@@ -204,9 +238,9 @@ def show_login_screen():
 # サイドバー
 # ====================
 def show_sidebar():
-    st.sidebar.header("⚙️ API設定")
+    st.sidebar.header("⚙️ 設定")
     
-    # Streamlit Secretsから取得
+    # APIキー取得
     try:
         default_claude = st.secrets["CLAUDE_API_KEY"]
     except:
@@ -222,75 +256,94 @@ def show_sidebar():
     except:
         default_voice = ""
     
-    claude_api_key = st.sidebar.text_input(
-        "Claude APIキー", 
-        type="password", 
-        value=default_claude,
-        help="console.anthropic.comで取得"
-    )
-    elevenlabs_api_key = st.sidebar.text_input(
-        "ElevenLabs APIキー", 
-        type="password", 
-        value=default_elevenlabs,
-        help="elevenlabs.ioで取得"
-    )
-    elevenlabs_voice_id = st.sidebar.text_input(
-        "Voice ID", 
-        type="password", 
-        value=default_voice,
-        help="ElevenLabsで作成したボイスのID"
-    )
-    
-    # ドキュメント管理
-    st.sidebar.header("📄 ドキュメント管理")
-    
-    pdf_categories = ["就業規則", "性格情報", "仕事マニュアル", "その他"]
-    
-    with st.sidebar.expander("➕ PDFを追加"):
-        uploaded_pdf = st.file_uploader("PDFをアップロード", type="pdf")
-        pdf_category = st.selectbox("カテゴリ", pdf_categories)
+    # 管理者のみAPIキー入力可能
+    if st.session_state.is_admin:
+        st.sidebar.subheader("🔑 API設定（管理者）")
+        claude_api_key = st.sidebar.text_input(
+            "Claude APIキー", 
+            type="password", 
+            value=default_claude,
+            help="console.anthropic.comで取得"
+        )
+        elevenlabs_api_key = st.sidebar.text_input(
+            "ElevenLabs APIキー", 
+            type="password", 
+            value=default_elevenlabs,
+            help="elevenlabs.ioで取得"
+        )
+        elevenlabs_voice_id = st.sidebar.text_input(
+            "Voice ID", 
+            type="password", 
+            value=default_voice,
+            help="ElevenLabsで作成したボイスのID"
+        )
         
-        if uploaded_pdf and st.button("追加"):
-            pdf_text, total_pages = extract_pdf_text(uploaded_pdf)
-            if "エラー" not in pdf_text:
-                existing_names = [doc["name"] for doc in st.session_state.pdf_documents]
-                if uploaded_pdf.name not in existing_names:
-                    st.session_state.pdf_documents.append({
-                        "name": uploaded_pdf.name,
-                        "category": pdf_category,
-                        "text": pdf_text[:MAX_PDF_CHARS],
-                        "total_pages": total_pages,
-                        "total_chars": len(pdf_text)
-                    })
-                    st.success(f"「{uploaded_pdf.name}」を追加")
-                    st.rerun()
-                else:
-                    st.warning("既に追加されています")
-            else:
-                st.error(pdf_text)
-    
-    with st.sidebar.expander("📚 登録済みPDF"):
-        if st.session_state.pdf_documents:
-            for i, doc in enumerate(st.session_state.pdf_documents):
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.write(f"📄 {doc['name']} ({doc['total_pages']}ページ)")
-                with col2:
-                    if st.button("削除", key=f"del_{i}"):
-                        st.session_state.pdf_documents.pop(i)
+        # PDF管理（管理者のみ）
+        st.sidebar.header("📄 ドキュメント管理")
+        
+        pdf_categories = ["就業規則", "性格情報", "仕事マニュアル", "その他"]
+        
+        with st.sidebar.expander("➕ PDFを追加"):
+            uploaded_pdf = st.file_uploader("PDFをアップロード", type="pdf")
+            pdf_category = st.selectbox("カテゴリ", pdf_categories)
+            
+            if uploaded_pdf and st.button("追加"):
+                pdf_text, total_pages = extract_pdf_text(uploaded_pdf)
+                if "エラー" not in pdf_text:
+                    existing_names = [doc["name"] for doc in st.session_state.pdf_documents]
+                    if uploaded_pdf.name not in existing_names:
+                        st.session_state.pdf_documents.append({
+                            "name": uploaded_pdf.name,
+                            "category": pdf_category,
+                            "text": pdf_text[:MAX_PDF_CHARS],
+                            "total_pages": total_pages,
+                            "total_chars": len(pdf_text)
+                        })
+                        st.success(f"「{uploaded_pdf.name}」を追加")
                         st.rerun()
-        else:
-            st.write("PDFが登録されていません")
+                    else:
+                        st.warning("既に追加されています")
+                else:
+                    st.error(pdf_text)
+        
+        with st.sidebar.expander("📚 登録済みPDF"):
+            if st.session_state.pdf_documents:
+                for i, doc in enumerate(st.session_state.pdf_documents):
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.write(f"📄 {doc['name']} ({doc['total_pages']}ページ)")
+                    with col2:
+                        if st.button("削除", key=f"del_{i}"):
+                            st.session_state.pdf_documents.pop(i)
+                            st.rerun()
+            else:
+                st.write("PDFが登録されていません")
+        
+        if st.session_state.pdf_documents:
+            st.sidebar.subheader("使用するカテゴリ")
+            categories = ["すべて"] + pdf_categories
+            st.session_state.selected_category = st.sidebar.selectbox("カテゴリ", categories)
     
-    if st.session_state.pdf_documents:
-        st.sidebar.subheader("使用するカテゴリ")
-        categories = ["すべて"] + pdf_categories
-        st.session_state.selected_category = st.sidebar.selectbox("カテゴリ", categories)
+    else:
+        # 一般ユーザー：Secretsから自動取得（入力欄は表示しない）
+        claude_api_key = default_claude
+        elevenlabs_api_key = default_elevenlabs
+        elevenlabs_voice_id = default_voice
+        
+        st.sidebar.info("🔓 一般ユーザーモード")
+        st.sidebar.caption("APIキーは管理者が設定済み")
     
     st.sidebar.divider()
     
+    # ユーザー情報表示
+    if st.session_state.is_admin:
+        st.sidebar.caption("👤 管理者")
+    else:
+        st.sidebar.caption("👤 一般ユーザー")
+    
     if st.sidebar.button("ログアウト"):
         st.session_state.authenticated = False
+        st.session_state.is_admin = False
         st.rerun()
     
     return claude_api_key, elevenlabs_api_key, elevenlabs_voice_id
@@ -316,7 +369,7 @@ def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
         if not user_input:
             st.warning("質問を入力してください")
         elif not claude_api_key or not elevenlabs_api_key or not elevenlabs_voice_id:
-            st.warning("サイドバーでAPIキーを入力してください")
+            st.warning("APIキーが設定されていません。管理者にお問い合わせください。")
         elif WAKE_WORD in user_input:
             question = user_input.replace(WAKE_WORD, "").strip()
             st.write(f"**質問:** {question}")
@@ -384,7 +437,7 @@ def show_voice_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
         if not recognized_text:
             st.warning("テキストを入力してください")
         elif not claude_api_key or not elevenlabs_api_key or not elevenlabs_voice_id:
-            st.warning("サイドバーでAPIキーを入力してください")
+            st.warning("APIキーが設定されていません。管理者にお問い合わせください。")
         elif WAKE_WORD in recognized_text:
             question = recognized_text.replace(WAKE_WORD, "").strip()
             st.write(f"**質問:** {question}")
