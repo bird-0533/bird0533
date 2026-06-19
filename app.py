@@ -15,7 +15,6 @@ WAKE_WORD = "バード"
 VALID_INVITE_CODES = [
     "BIRD2024TEST",
     "INVITE123ABC",
-    # 必要なコードをここに追加
 ]
 
 # あなたの考え
@@ -41,28 +40,23 @@ MY_THINKING = """
 例3）急ぎの依頼が重複 → 上長判断を優先
 """
 
-# PDFの最大文字数（変更可能）
 MAX_PDF_CHARS = 50000
 
 # ====================
-# 招待コード認証（簡易版）
+# 招待コード認証
 # ====================
 def check_invite_code(code):
-    """招待コードが有効かチェック"""
     return code in VALID_INVITE_CODES
 
 def generate_invite_code():
-    """新しい招待コードを生成（管理用）"""
     import random
     import string
-    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
-    return code
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
 
 # ====================
 # PDFテキスト抽出
 # ====================
 def extract_pdf_text(pdf_file):
-    """PDFからテキストを抽出"""
     try:
         reader = PdfReader(pdf_file)
         text = ""
@@ -77,7 +71,6 @@ def extract_pdf_text(pdf_file):
 # Web検索
 # ====================
 def web_search(query, max_results=3):
-    """DuckDuckGoでWeb検索"""
     try:
         results = []
         with DDGS() as ddgs:
@@ -95,7 +88,6 @@ def web_search(query, max_results=3):
 # Claude API
 # ====================
 def get_ai_response(question, api_key, context=""):
-    """Claude APIで回答を生成"""
     client = anthropic.Anthropic(api_key=api_key)
     
     system_prompt = (
@@ -107,12 +99,10 @@ def get_ai_response(question, api_key, context=""):
         system_prompt += f"\n\n以下のドキュメントの内容に基づいて回答してください：\n\n{context}"
     
     message = client.messages.create(
-        model="claude-3-haiku-20240307",
+        model="claude-3-5-sonnet-20241022",
         max_tokens=4000,
         system=system_prompt,
-        messages=[
-            {"role": "user", "content": question}
-        ]
+        messages=[{"role": "user", "content": question}]
     )
     return message.content[0].text
 
@@ -120,7 +110,6 @@ def get_ai_response(question, api_key, context=""):
 # ElevenLabs音声合成
 # ====================
 def synthesize_voice(text, api_key, voice_id):
-    """ElevenLabsで音声を合成"""
     client = ElevenLabs(api_key=api_key)
     
     audio_generator = client.text_to_speech.convert(
@@ -129,14 +118,12 @@ def synthesize_voice(text, api_key, voice_id):
         model_id="eleven_multilingual_v2"
     )
     
-    audio_bytes = b''.join(audio_generator)
-    return audio_bytes
+    return b''.join(audio_generator)
 
 # ====================
-# セッション状態の初期化
+# セッション状態初期化
 # ====================
 def init_session_state():
-    """セッション状態を初期化"""
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
     if "mode" not in st.session_state:
@@ -152,7 +139,6 @@ def init_session_state():
 # 音声入力HTML
 # ====================
 def get_speech_recognition_html():
-    """Web Speech APIのHTMLを返す"""
     return """
     <script>
     function startRecognition() {
@@ -160,34 +146,25 @@ def get_speech_recognition_html():
             alert('お使いのブラウザは音声認識に対応していません。');
             return;
         }
-        
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         const recognition = new SpeechRecognition();
-        
         recognition.lang = 'ja-JP';
         recognition.continuous = false;
         recognition.interimResults = false;
-        
         recognition.onstart = function() {
             document.getElementById('status').innerText = '🎤 認識中...';
         };
-        
         recognition.onresult = function(event) {
             const text = event.results[0][0].transcript;
             document.getElementById('result').value = text;
             document.getElementById('status').innerText = '✅ 認識完了';
-            // Streamlitにテキストを渡す
-            window.parent.postMessage({type: 'streamlit:setComponentValue', value: text}, '*');
         };
-        
         recognition.onerror = function(event) {
             document.getElementById('status').innerText = '❌ エラー: ' + event.error;
         };
-        
         recognition.start();
     }
     </script>
-    
     <div style="padding: 20px; border: 1px solid #ccc; border-radius: 10px; margin: 10px 0;">
         <button onclick="startRecognition()" style="padding: 10px 20px; font-size: 16px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer;">
             🎤 マイクで話す
@@ -201,31 +178,24 @@ def get_speech_recognition_html():
 # ログイン画面
 # ====================
 def show_login_screen():
-    """ログイン画面を表示"""
     st.header("🔐 ログイン")
     
-    # 管理者用：招待コード生成
     with st.expander("管理者用：招待コード生成"):
-        st.write("※この機能はテスト用です。実際の運用では削除してください。")
+        st.write("※この機能はテスト用です。")
         if st.button("招待コードを生成"):
-            new_code = generate_invite_code()
-            st.success(f"招待コード: {new_code}")
-            st.info("このコードをユーザーに共有してください")
-        
+            st.success(f"招待コード: {generate_invite_code()}")
         st.caption("現在の有効なコード:")
         for code in VALID_INVITE_CODES:
             st.code(code)
     
     st.divider()
     
-    # 招待コード入力
     invite_code = st.text_input("招待コードを入力してください", type="password")
     
     if st.button("認証", type="primary"):
         if check_invite_code(invite_code):
             st.session_state.authenticated = True
-            st.session_state.invite_code = invite_code
-            st.success("認証成功！アプリを起動しています...")
+            st.success("認証成功！")
             st.rerun()
         else:
             st.error("無効な招待コードです")
@@ -234,30 +204,39 @@ def show_login_screen():
 # サイドバー
 # ====================
 def show_sidebar():
-    """サイドバーを表示"""
-    # API設定
     st.sidebar.header("⚙️ API設定")
     
-    # 環境変数から取得、なければ空文字
-    default_claude = os.environ.get("CLAUDE_API_KEY", "")
-    default_elevenlabs = os.environ.get("ELEVENLABS_API_KEY", "")
-    default_voice = os.environ.get("ELEVENLABS_VOICE_ID", "")
+    # Streamlit Secretsから取得
+    try:
+        default_claude = st.secrets["CLAUDE_API_KEY"]
+    except:
+        default_claude = ""
+    
+    try:
+        default_elevenlabs = st.secrets["ELEVENLABS_API_KEY"]
+    except:
+        default_elevenlabs = ""
+    
+    try:
+        default_voice = st.secrets["ELEVENLABS_VOICE_ID"]
+    except:
+        default_voice = ""
     
     claude_api_key = st.sidebar.text_input(
         "Claude APIキー", 
-        type="password",
+        type="password", 
         value=default_claude,
         help="console.anthropic.comで取得"
     )
     elevenlabs_api_key = st.sidebar.text_input(
         "ElevenLabs APIキー", 
-        type="password",
+        type="password", 
         value=default_elevenlabs,
         help="elevenlabs.ioで取得"
     )
     elevenlabs_voice_id = st.sidebar.text_input(
         "Voice ID", 
-        type="password",
+        type="password", 
         value=default_voice,
         help="ElevenLabsで作成したボイスのID"
     )
@@ -267,32 +246,29 @@ def show_sidebar():
     
     pdf_categories = ["就業規則", "性格情報", "仕事マニュアル", "その他"]
     
-    # PDF追加
     with st.sidebar.expander("➕ PDFを追加"):
         uploaded_pdf = st.file_uploader("PDFをアップロード", type="pdf")
         pdf_category = st.selectbox("カテゴリ", pdf_categories)
         
-        if uploaded_pdf is not None:
-            if st.button("追加", key="add_pdf"):
-                pdf_text, total_pages = extract_pdf_text(uploaded_pdf)
-                if "エラー" not in pdf_text:
-                    existing_names = [doc["name"] for doc in st.session_state.pdf_documents]
-                    if uploaded_pdf.name not in existing_names:
-                        st.session_state.pdf_documents.append({
-                            "name": uploaded_pdf.name,
-                            "category": pdf_category,
-                            "text": pdf_text[:MAX_PDF_CHARS],
-                            "total_pages": total_pages,
-                            "total_chars": len(pdf_text)
-                        })
-                        st.success(f"「{uploaded_pdf.name}」を追加しました（{total_pages}ページ）")
-                        st.rerun()
-                    else:
-                        st.warning("このファイルは既に追加されています")
+        if uploaded_pdf and st.button("追加"):
+            pdf_text, total_pages = extract_pdf_text(uploaded_pdf)
+            if "エラー" not in pdf_text:
+                existing_names = [doc["name"] for doc in st.session_state.pdf_documents]
+                if uploaded_pdf.name not in existing_names:
+                    st.session_state.pdf_documents.append({
+                        "name": uploaded_pdf.name,
+                        "category": pdf_category,
+                        "text": pdf_text[:MAX_PDF_CHARS],
+                        "total_pages": total_pages,
+                        "total_chars": len(pdf_text)
+                    })
+                    st.success(f"「{uploaded_pdf.name}」を追加")
+                    st.rerun()
                 else:
-                    st.error(pdf_text)
+                    st.warning("既に追加されています")
+            else:
+                st.error(pdf_text)
     
-    # PDF一覧
     with st.sidebar.expander("📚 登録済みPDF"):
         if st.session_state.pdf_documents:
             for i, doc in enumerate(st.session_state.pdf_documents):
@@ -306,7 +282,6 @@ def show_sidebar():
         else:
             st.write("PDFが登録されていません")
     
-    # カテゴリ選択
     if st.session_state.pdf_documents:
         st.sidebar.subheader("使用するカテゴリ")
         categories = ["すべて"] + pdf_categories
@@ -314,7 +289,6 @@ def show_sidebar():
     
     st.sidebar.divider()
     
-    # ログアウト
     if st.sidebar.button("ログアウト"):
         st.session_state.authenticated = False
         st.rerun()
@@ -325,11 +299,9 @@ def show_sidebar():
 # テキスト入力モード
 # ====================
 def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
-    """テキスト入力モードを表示"""
     st.subheader("💬 質問を入力")
     st.write(f"「{WAKE_WORD}」を含めて質問してください")
     
-    # PDF情報表示
     if st.session_state.pdf_documents:
         total_chars = sum(
             min(doc['total_chars'], MAX_PDF_CHARS) 
@@ -387,11 +359,9 @@ def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
 # 音声入力モード
 # ====================
 def show_voice_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
-    """音声入力モードを表示"""
     st.subheader("🎤 音声入力")
     st.write("マイクボタンを押して話してください")
     
-    # PDF情報表示
     if st.session_state.pdf_documents:
         total_chars = sum(
             min(doc['total_chars'], MAX_PDF_CHARS) 
@@ -399,12 +369,10 @@ def show_voice_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
         )
         st.info(f"📄 {len(st.session_state.pdf_documents)}個のPDF読み込み中（合計{total_chars}文字）")
     
-    # 音声認識コンポーネント
     components.html(get_speech_recognition_html(), height=300)
     
     st.write("---")
     
-    # 手動入力（音声認識が動作しない場合の代替）
     recognized_text = st.text_area(
         "認識されたテキスト（編集可能）", 
         st.session_state.recognized_text, 
@@ -485,14 +453,11 @@ def main():
     mode = st.radio(
         "入力方法を選択",
         ["📝 テキスト入力", "🎤 音声入力"],
-        index=0 if st.session_state.mode == "text" else 1,
+        index=0,
         horizontal=True
     )
     
-    if mode == "📝 テキスト入力":
-        st.session_state.mode = "text"
-    else:
-        st.session_state.mode = "voice"
+    st.session_state.mode = "text" if mode == "📝 テキスト入力" else "voice"
     
     st.divider()
     
