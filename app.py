@@ -13,7 +13,7 @@ WAKE_WORD = "バード"
 
 # 管理者用招待コード
 ADMIN_INVITE_CODES = [
-    "ADMIN_BIRD_2025",      # 管理者用
+    "ADMIN_BIRD_2025",
 ]
 
 # 一般ユーザー用招待コード
@@ -52,16 +52,14 @@ MAX_PDF_CHARS = 50000
 # 招待コード認証
 # ====================
 def check_invite_code(code):
-    """招待コードをチェックして、管理者かどうかを返す"""
     if code in ADMIN_INVITE_CODES:
-        return True, True   # (認証成功, 管理者)
+        return True, True
     elif code in USER_INVITE_CODES:
-        return True, False  # (認証成功, 一般ユーザー)
+        return True, False
     else:
-        return False, False # (認証失敗)
+        return False, False
 
 def generate_invite_code():
-    """新しい招待コードを生成"""
     import random
     import string
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
@@ -81,21 +79,59 @@ def extract_pdf_text(pdf_file):
         return f"PDF読み込みエラー: {str(e)}", 0
 
 # ====================
-# Web検索
+# Web検索（改善版）
 # ====================
 def web_search(query, max_results=3):
+    """DuckDuckGoでWeb検索"""
     try:
         results = []
+        
+        # 検索クエリを最適化
+        search_query = query
+        search_query = search_query.replace("について教えて", "")
+        search_query = search_query.replace("について", "")
+        search_query = search_query.replace("教えて", "")
+        search_query = search_query.replace("とは", "")
+        search_query = search_query.replace("とは何", "")
+        search_query = search_query.strip()
+        
+        # 日本語キーワードに英語を追加
+        search_query_en = search_query
+        
+        translations = {
+            "有給休暇": "paid leave Japan",
+            "有給": "paid leave Japan",
+            "休暇": "vacation Japan",
+            "残業": "overtime Japan",
+            "給与": "salary Japan",
+            "勤務": "work Japan",
+            "退職": "resignation Japan",
+            "採用": "hiring Japan",
+            "労働": "labor Japan",
+            "契約": "contract Japan",
+        }
+        
+        for jp, en in translations.items():
+            if jp in search_query:
+                search_query_en = f"{search_query} {en}"
+                break
+        
+        # 検索実行
         with DDGS() as ddgs:
-            for result in ddgs.text(query, max_results=max_results):
+            for result in ddgs.text(search_query_en, max_results=max_results):
                 results.append(
                     f"タイトル: {result.get('title', '')}\n"
-                    f"内容: {result.get('body', '')}\n"
+                    f"内容: {result.get('body', '')[:300]}...\n"
                     f"URL: {result.get('href', '')}\n"
                 )
-        return "\n".join(results) if results else "検索結果が見つかりませんでした。"
+        
+        if results:
+            return f"【検索クエリ: {search_query_en}】\n\n" + "\n".join(results)
+        else:
+            return f"「{search_query}」の検索結果が見つかりませんでした。\nヒント: より具体的なキーワード（例：有給休暇 法律）で試してください。"
+            
     except Exception as e:
-        return f"検索エラー: {str(e)}"
+        return f"検索エラー: {str(e)}\nしばらく時間を置いてから再試行してください。"
 
 # ====================
 # Claude API
@@ -195,7 +231,6 @@ def get_speech_recognition_html():
 def show_login_screen():
     st.header("🔐 ログイン")
     
-    # 管理者用：招待コード発行
     if st.session_state.get("show_admin_panel", False):
         with st.expander("🔑 管理者用：招待コード発行", expanded=True):
             st.write("**管理者用招待コード:**")
@@ -208,16 +243,13 @@ def show_login_screen():
             if st.button("新しい招待コードを生成"):
                 new_code = generate_invite_code()
                 st.success(f"生成されたコード: {new_code}")
-                st.info("このコードをコピペして、USER_INVITE_CODESに追加してください")
     
-    # 管理者パネル表示用
     if st.button("管理者オプションを表示"):
         st.session_state.show_admin_panel = True
         st.rerun()
     
     st.divider()
     
-    # 招待コード入力
     invite_code = st.text_input("招待コードを入力してください", type="password")
     
     if st.button("認証", type="primary"):
@@ -256,7 +288,6 @@ def show_sidebar():
     except:
         default_voice = ""
     
-    # 管理者のみAPIキー入力可能
     if st.session_state.is_admin:
         st.sidebar.subheader("🔑 API設定（管理者）")
         claude_api_key = st.sidebar.text_input(
@@ -278,7 +309,6 @@ def show_sidebar():
             help="ElevenLabsで作成したボイスのID"
         )
         
-        # PDF管理（管理者のみ）
         st.sidebar.header("📄 ドキュメント管理")
         
         pdf_categories = ["就業規則", "性格情報", "仕事マニュアル", "その他"]
@@ -325,7 +355,6 @@ def show_sidebar():
             st.session_state.selected_category = st.sidebar.selectbox("カテゴリ", categories)
     
     else:
-        # 一般ユーザー：Secretsから自動取得（入力欄は表示しない）
         claude_api_key = default_claude
         elevenlabs_api_key = default_elevenlabs
         elevenlabs_voice_id = default_voice
@@ -335,7 +364,6 @@ def show_sidebar():
     
     st.sidebar.divider()
     
-    # ユーザー情報表示
     if st.session_state.is_admin:
         st.sidebar.caption("👤 管理者")
     else:
@@ -374,7 +402,6 @@ def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
             question = user_input.replace(WAKE_WORD, "").strip()
             st.write(f"**質問:** {question}")
             
-            # コンテキスト準備
             context = ""
             if st.session_state.pdf_documents:
                 filtered_docs = st.session_state.pdf_documents
@@ -386,19 +413,16 @@ def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
                 for doc in filtered_docs:
                     context += f"\n\n=== {doc['name']} ===\n{doc['text']}"
             
-            # AI回答
             with st.spinner("考え中..."):
                 answer = get_ai_response(question, claude_api_key, context)
             
             st.write(f"**回答:** {answer}")
             
-            # Web検索
             if use_web_search:
                 with st.spinner("Web検索中..."):
                     search_results = web_search(question)
                 st.write(f"**Web検索結果:**\n{search_results}")
             
-            # 音声合成
             with st.spinner("音声生成中..."):
                 try:
                     audio_bytes = synthesize_voice(answer, elevenlabs_api_key, elevenlabs_voice_id)
@@ -442,7 +466,6 @@ def show_voice_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
             question = recognized_text.replace(WAKE_WORD, "").strip()
             st.write(f"**質問:** {question}")
             
-            # コンテキスト準備
             context = ""
             if st.session_state.pdf_documents:
                 filtered_docs = st.session_state.pdf_documents
@@ -454,19 +477,16 @@ def show_voice_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
                 for doc in filtered_docs:
                     context += f"\n\n=== {doc['name']} ===\n{doc['text']}"
             
-            # AI回答
             with st.spinner("考え中..."):
                 answer = get_ai_response(question, claude_api_key, context)
             
             st.write(f"**回答:** {answer}")
             
-            # Web検索
             if use_web_search:
                 with st.spinner("Web検索中..."):
                     search_results = web_search(question)
                 st.write(f"**Web検索結果:**\n{search_results}")
             
-            # 音声合成
             with st.spinner("音声生成中..."):
                 try:
                     audio_bytes = synthesize_voice(answer, elevenlabs_api_key, elevenlabs_voice_id)
@@ -488,20 +508,16 @@ def main():
     
     st.title("🤖 AIアシスタント「バード」")
     
-    # セッション状態初期化
     init_session_state()
     
-    # 認証チェック
     if not st.session_state.authenticated:
         show_login_screen()
         return
     
-    # サイドバー表示
     claude_api_key, elevenlabs_api_key, elevenlabs_voice_id = show_sidebar()
     
     st.divider()
     
-    # モード切り替え
     st.subheader("モード選択")
     mode = st.radio(
         "入力方法を選択",
@@ -514,7 +530,6 @@ def main():
     
     st.divider()
     
-    # モード別表示
     if st.session_state.mode == "text":
         show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id)
     else:
