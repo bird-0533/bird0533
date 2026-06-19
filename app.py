@@ -701,7 +701,7 @@ def main():
     elif mode == "🎤 マイク押下":
         st.caption("マイクボタンを押してから話します（ウェイクワード不要）")
     else:
-        st.caption(f(f"常にマイクが有効です。「{WAKE_WORD}」と言ってから質問してください")
+        st.caption(f"常にマイクが有効です。「{WAKE_WORD}」と言ってから質問してください")
     
     st.session_state.mode = mode
     
