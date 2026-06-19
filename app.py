@@ -82,11 +82,9 @@ def extract_pdf_text(pdf_file):
 # Web検索（改善版）
 # ====================
 def web_search(query, max_results=3):
-    """DuckDuckGoでWeb検索"""
     try:
         results = []
         
-        # 検索クエリを最適化
         search_query = query
         search_query = search_query.replace("について教えて", "")
         search_query = search_query.replace("について", "")
@@ -95,7 +93,6 @@ def web_search(query, max_results=3):
         search_query = search_query.replace("とは何", "")
         search_query = search_query.strip()
         
-        # 日本語キーワードに英語を追加
         search_query_en = search_query
         
         translations = {
@@ -116,7 +113,6 @@ def web_search(query, max_results=3):
                 search_query_en = f"{search_query} {en}"
                 break
         
-        # 検索実行
         with DDGS() as ddgs:
             for result in ddgs.text(search_query_en, max_results=max_results):
                 results.append(
@@ -128,7 +124,7 @@ def web_search(query, max_results=3):
         if results:
             return f"【検索クエリ: {search_query_en}】\n\n" + "\n".join(results)
         else:
-            return f"「{search_query}」の検索結果が見つかりませんでした。\nヒント: より具体的なキーワード（例：有給休暇 法律）で試してください。"
+            return f"「{search_query}」の検索結果が見つかりませんでした。\nヒント: より具体的なキーワードで試してください。"
             
     except Exception as e:
         return f"検索エラー: {str(e)}\nしばらく時間を置いてから再試行してください。"
@@ -187,9 +183,10 @@ def init_session_state():
         st.session_state.selected_category = "すべて"
 
 # ====================
-# 音声入力HTML
+# 音声入力HTML（マイク押下モード）
 # ====================
 def get_speech_recognition_html():
+    """マイク押下モード用のHTML"""
     return """
     <script>
     function startRecognition() {
@@ -222,6 +219,119 @@ def get_speech_recognition_html():
         </button>
         <p id="status" style="margin-top: 10px;">準備完了</p>
         <textarea id="result" style="width: 100%; height: 100px; margin-top: 10px;" placeholder="認識されたテキスト..."></textarea>
+    </div>
+    """
+
+# ====================
+# 常にマイクモード用HTML
+# ====================
+def get_continuous_speech_html(wake_word="バード"):
+    """常にマイクモード用のHTML（ウェイクワード検出）"""
+    return f"""
+    <script>
+    let recognition = null;
+    let isListening = false;
+    const wakeWord = '{wake_word}';
+    
+    function startContinuousRecognition() {{
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {{
+            alert('お使いのブラウザは音声認識に対応していません。');
+            return;
+        }}
+        
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SpeechRecognition();
+        recognition.lang = 'ja-JP';
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        
+        recognition.onstart = function() {{
+            document.getElementById('status').innerText = '🎤 常にマイクモード：待機中...（「{wake_word}」と話しかけてください）';
+            document.getElementById('status').style.color = 'blue';
+            isListening = true;
+        }};
+        
+        recognition.onresult = function(event) {{
+            let interimTranscript = '';
+            let finalTranscript = '';
+            
+            for (let i = event.resultIndex; i < event.results.length; i++) {{
+                const transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {{
+                    finalTranscript += transcript;
+                }} else {{
+                    interimTranscript += transcript;
+                }}
+            }}
+            
+            // ウェイクワードが含まれているかチェック
+            const fullText = finalTranscript || interimTranscript;
+            if (fullText.includes(wakeWord)) {{
+                // ウェイクワードを除去したテキストを取得
+                const question = fullText.replace(wakeWord, '').trim();
+                if (question.length > 0) {{
+                    document.getElementById('result').value = question;
+                    document.getElementById('status').innerText = '✅ 質問を検出しました！「送信」ボタンを押してください。';
+                    document.getElementById('status').style.color = 'green';
+                }} else {{
+                    document.getElementById('status').innerText = '🎤 質問を聞いています...';
+                    document.getElementById('status').style.color = 'orange';
+                }}
+            }}
+            
+            // 現在認識中のテキストを表示
+            if (interimTranscript) {{
+                document.getElementById('interim').innerText = '認識中: ' + interimTranscript;
+            }}
+        }};
+        
+        recognition.onerror = function(event) {{
+            document.getElementById('status').innerText = '❌ エラー: ' + event.error;
+            document.getElementById('status').style.color = 'red';
+            if (event.error !== 'no-speech') {{
+                stopContinuousRecognition();
+            }}
+        }};
+        
+        recognition.onend = function() {{
+            if (isListening) {{
+                // 自動で再開（連続モード）
+                try {{
+                    recognition.start();
+                }} catch (e) {{
+                    console.log('再開エラー:', e);
+                }}
+            }}
+        }};
+        
+        recognition.start();
+    }}
+    
+    function stopContinuousRecognition() {{
+        if (recognition) {{
+            isListening = false;
+            recognition.stop();
+            recognition = null;
+            document.getElementById('status').innerText = '⏹️ 停止中';
+            document.getElementById('status').style.color = 'gray';
+        }}
+    }}
+    </script>
+    
+    <div style="padding: 20px; border: 1px solid #4CAF50; border-radius: 10px; margin: 10px 0; background-color: #f9f9f9;">
+        <p style="margin: 0 0 10px 0; font-weight: bold;">🎙️ 常にマイクモード</p>
+        <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">
+            「{wake_word}」と言ってから質問してください。例：「{wake_word}、今日の天気は？」
+        </p>
+        <button onclick="startContinuousRecognition()" style="padding: 10px 20px; font-size: 16px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;">
+            🎤 開始
+        </button>
+        <button onclick="stopContinuousRecognition()" style="padding: 10px 20px; font-size: 16px; background-color: #f44336; color: white; border: none; border-radius: 5px; cursor: pointer;">
+            ⏹️ 停止
+        </button>
+        <p id="status" style="margin-top: 10px; color: gray;">準備完了</p>
+        <p id="interim" style="margin-top: 5px; color: #666; font-size: 14px;"></p>
+        <textarea id="result" style="width: 100%; height: 80px; margin-top: 10px;" placeholder="認識された質問（自動入力）"></textarea>
     </div>
     """
 
@@ -272,7 +382,6 @@ def show_login_screen():
 def show_sidebar():
     st.sidebar.header("⚙️ 設定")
     
-    # APIキー取得
     try:
         default_claude = st.secrets["CLAUDE_API_KEY"]
     except:
@@ -380,8 +489,8 @@ def show_sidebar():
 # テキスト入力モード
 # ====================
 def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
-    st.subheader("💬 質問を入力")
-    st.write(f"「{WAKE_WORD}」を含めて質問してください")
+    st.subheader("💬 テキスト入力")
+    st.write("質問を入力してください（ウェイクワード不要）")
     
     if st.session_state.pdf_documents:
         total_chars = sum(
@@ -398,8 +507,8 @@ def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
             st.warning("質問を入力してください")
         elif not claude_api_key or not elevenlabs_api_key or not elevenlabs_voice_id:
             st.warning("APIキーが設定されていません。管理者にお問い合わせください。")
-        elif WAKE_WORD in user_input:
-            question = user_input.replace(WAKE_WORD, "").strip()
+        else:
+            question = user_input.strip()
             st.write(f"**質問:** {question}")
             
             context = ""
@@ -429,15 +538,13 @@ def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
                     st.audio(audio_bytes, format="audio/mp3")
                 except Exception as e:
                     st.error(f"音声生成エラー: {str(e)}")
-        else:
-            st.warning(f"「{WAKE_WORD}」を含めて質問してください")
 
 # ====================
-# 音声入力モード
+# マイク押下モード
 # ====================
-def show_voice_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
-    st.subheader("🎤 音声入力")
-    st.write("マイクボタンを押して話してください")
+def show_push_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
+    st.subheader("🎤 マイク押下モード")
+    st.write("マイクボタンを押してから話してください（ウェイクワード不要）")
     
     if st.session_state.pdf_documents:
         total_chars = sum(
@@ -462,8 +569,8 @@ def show_voice_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
             st.warning("テキストを入力してください")
         elif not claude_api_key or not elevenlabs_api_key or not elevenlabs_voice_id:
             st.warning("APIキーが設定されていません。管理者にお問い合わせください。")
-        elif WAKE_WORD in recognized_text:
-            question = recognized_text.replace(WAKE_WORD, "").strip()
+        else:
+            question = recognized_text.strip()
             st.write(f"**質問:** {question}")
             
             context = ""
@@ -493,8 +600,69 @@ def show_voice_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
                     st.audio(audio_bytes, format="audio/mp3")
                 except Exception as e:
                     st.error(f"音声生成エラー: {str(e)}")
+
+# ====================
+# 常にマイクモード
+# ====================
+def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
+    st.subheader("🎙️ 常にマイクモード")
+    st.write(f"「{WAKE_WORD}」と言ってから質問してください")
+    st.caption("例：「バード、今日の天気は？」")
+    
+    if st.session_state.pdf_documents:
+        total_chars = sum(
+            min(doc['total_chars'], MAX_PDF_CHARS) 
+            for doc in st.session_state.pdf_documents
+        )
+        st.info(f"📄 {len(st.session_state.pdf_documents)}個のPDF読み込み中（合計{total_chars}文字）")
+    
+    components.html(get_continuous_speech_html(WAKE_WORD), height=350)
+    
+    st.write("---")
+    
+    recognized_text = st.text_area(
+        "認識された質問（編集可能）", 
+        st.session_state.recognized_text, 
+        height=100
+    )
+    use_web_search = st.checkbox("情報がない場合はWeb検索する", value=False)
+    
+    if st.button("送信", type="primary"):
+        if not recognized_text:
+            st.warning("テキストを入力してください")
+        elif not claude_api_key or not elevenlabs_api_key or not elevenlabs_voice_id:
+            st.warning("APIキーが設定されていません。管理者にお問い合わせください。")
         else:
-            st.warning(f"「{WAKE_WORD}」を含めて話してください")
+            question = recognized_text.strip()
+            st.write(f"**質問:** {question}")
+            
+            context = ""
+            if st.session_state.pdf_documents:
+                filtered_docs = st.session_state.pdf_documents
+                if st.session_state.selected_category != "すべて":
+                    filtered_docs = [
+                        doc for doc in st.session_state.pdf_documents 
+                        if doc["category"] == st.session_state.selected_category
+                    ]
+                for doc in filtered_docs:
+                    context += f"\n\n=== {doc['name']} ===\n{doc['text']}"
+            
+            with st.spinner("考え中..."):
+                answer = get_ai_response(question, claude_api_key, context)
+            
+            st.write(f"**回答:** {answer}")
+            
+            if use_web_search:
+                with st.spinner("Web検索中..."):
+                    search_results = web_search(question)
+                st.write(f"**Web検索結果:**\n{search_results}")
+            
+            with st.spinner("音声生成中..."):
+                try:
+                    audio_bytes = synthesize_voice(answer, elevenlabs_api_key, elevenlabs_voice_id)
+                    st.audio(audio_bytes, format="audio/mp3")
+                except Exception as e:
+                    st.error(f"音声生成エラー: {str(e)}")
 
 # ====================
 # メインアプリ
@@ -518,22 +686,34 @@ def main():
     
     st.divider()
     
+    # モード切り替え
     st.subheader("モード選択")
     mode = st.radio(
         "入力方法を選択",
-        ["📝 テキスト入力", "🎤 音声入力"],
+        ["⌨️ テキスト入力", "🎤 マイク押下", "🎙️ 常にマイク"],
         index=0,
         horizontal=True
     )
     
-    st.session_state.mode = "text" if mode == "📝 テキスト入力" else "voice"
+    # モード別説明
+    if mode == "⌨️ テキスト入力":
+        st.caption("キーボードで入力します")
+    elif mode == "🎤 マイク押下":
+        st.caption("マイクボタンを押してから話します（ウェイクワード不要）")
+    else:
+        st.caption(f(f"常にマイクが有効です。「{WAKE_WORD}」と言ってから質問してください")
+    
+    st.session_state.mode = mode
     
     st.divider()
     
-    if st.session_state.mode == "text":
+    # モード別表示
+    if mode == "⌨️ テキスト入力":
         show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id)
+    elif mode == "🎤 マイク押下":
+        show_push_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id)
     else:
-        show_voice_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id)
+        show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id)
 
 # ====================
 # エントリーポイント
