@@ -202,10 +202,10 @@ def init_session_state():
         st.session_state.speech_text = ""
 
 # ====================
-# 音声認識コンポーネント（コピー機能付き）
+# 音声認識コンポーネント（マイク押下モード）
 # ====================
 def create_speech_component(key="speech"):
-    """音声認識コンポーネントを作成（コピーボタン付き）"""
+    """音声認識コンポーネント（コピーボタン付き）"""
     
     html_code = """
     <div style="padding: 20px; border: 1px solid #ccc; border-radius: 10px; margin: 10px 0; background-color: #f9f9f9;">
@@ -302,12 +302,7 @@ def create_speech_component(key="speech"):
     </script>
     """
     
-    components.html(html_code, height=320)
-
-    
-    # コンポーネントを表示し、結果を取得
-    result = components.html(html_code, height=200)
-    return result
+    components.html(html_code, height=350)
 
 # ====================
 # 常にマイクモード用コンポーネント
@@ -317,31 +312,35 @@ def create_continuous_speech_component(wake_word="バード"):
     
     html_code = f"""
     <div style="padding: 20px; border: 1px solid #4CAF50; border-radius: 10px; margin: 10px 0; background-color: #f9f9f9;">
-        <p style="margin: 0 0 10px 0; font-weight: bold;">🎙️ 常にマイクモード</p>
-        <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">
-            「{wake_word}」と言ってから質問してください
+        <p style="margin: 0 0 10px 0; font-weight: bold; color: #333;">🎙️ 常にマイクモード</p>
+        <p style="margin: 0 0 10px 0; color: #666; font-size: 14px;">
+            ① 開始ボタンを押す<br>
+            ② 「{wake_word}」と言ってから質問する<br>
+            ③ 認識されたテキストを確認<br>
+            ④ 📋コピーボタンを押す<br>
+            ⑤ 下のテキストエリアに貼り付けて送信
         </p>
         <button id="startBtn" style="padding: 12px 24px; font-size: 16px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;">
             🎤 開始
         </button>
-        <button id="stopBtn" style="padding: 12px 24px; font-size: 16px; background-color: #f44336; color: white; border: none; border-radius: 5px; cursor: pointer;">
+        <button id="stopBtn" style="padding: 12px 24px; font-size: 16px; background-color: #f44336; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;">
             ⏹️ 停止
         </button>
-        <p id="status" style="margin-top: 10px; color: gray;">準備完了</p>
+        <button id="copyBtn" style="padding: 12px 24px; font-size: 16px; background-color: #2196F3; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;">
+            📋 コピー
+        </button>
+        <button id="clearBtn" style="padding: 12px 24px; font-size: 16px; background-color: #9e9e9e; color: white; border: none; border-radius: 5px; cursor: pointer;">
+            🗑️ クリア
+        </button>
+        <p id="status" style="margin-top: 15px; color: gray;">準備完了</p>
         <p id="interim" style="margin-top: 5px; color: #666; font-size: 14px;"></p>
+        <textarea id="result" style="width: 100%; height: 60px; margin-top: 10px; font-size: 16px; padding: 10px; border: 1px solid #ddd; border-radius: 5px;" placeholder="認識された質問..."></textarea>
     </div>
 
     <script>
     let recognition = null;
     let isListening = false;
     const wakeWord = '{wake_word}';
-    
-    function sendToStreamlit(text) {{
-        window.parent.postMessage({{
-            type: 'streamlit:setComponentValue',
-            data: text
-        }}, '*');
-    }}
     
     document.getElementById('startBtn').addEventListener('click', function() {{
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {{
@@ -378,9 +377,9 @@ def create_continuous_speech_component(wake_word="バード"):
             if (fullText.includes(wakeWord)) {{
                 const question = fullText.replace(wakeWord, '').trim();
                 if (question.length > 0) {{
-                    document.getElementById('status').innerText = '✅ 質問を検出！自動的に転送されます';
+                    document.getElementById('result').value = question;
+                    document.getElementById('status').innerText = '✅ 質問を検出！📋コピーボタンを押してください';
                     document.getElementById('status').style.color = 'green';
-                    sendToStreamlit(question);
                 }}
             }}
             
@@ -427,11 +426,33 @@ def create_continuous_speech_component(wake_word="バード"):
             document.getElementById('status').style.color = 'gray';
         }}
     }});
+    
+    document.getElementById('copyBtn').addEventListener('click', function() {{
+        const text = document.getElementById('result').value;
+        if (text) {{
+            navigator.clipboard.writeText(text).then(function() {{
+                document.getElementById('status').innerText = '✅ コピーしました！下のテキストエリアに貼り付けて送信してください';
+                document.getElementById('status').style.color = 'green';
+                alert('コピーしました！\\n\\n下のテキストエリアをクリックして、\\nCtrl+V（Mac: Cmd+V）で貼り付けてください。');
+            }}).catch(function(err) {{
+                document.getElementById('result').select();
+                document.execCommand('copy');
+                alert('コピーしました！\\n\\n下のテキストエリアをクリックして、\\nCtrl+V（Mac: Cmd+V）で貼り付けてください。');
+            }});
+        }} else {{
+            alert('コピーするテキストがありません。\\n先に🎤開始ボタンを押して、「{wake_word}」と言ってから質問してください。');
+        }}
+    }});
+    
+    document.getElementById('clearBtn').addEventListener('click', function() {{
+        document.getElementById('result').value = '';
+        document.getElementById('status').innerText = '準備完了';
+        document.getElementById('status').style.color = 'gray';
+    }});
     </script>
     """
     
-    result = components.html(html_code, height=250)
-    return result
+    components.html(html_code, height=400)
 
 # ====================
 # ログイン画面
@@ -676,22 +697,23 @@ def show_push_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
     use_web_search = st.checkbox("情報がない場合はWeb検索する", value=False, key="web_search_push")
     
     # 音声認識コンポーネントを表示
-    speech_result = create_speech_component(key="push_mic")
-    
-    # 認識結果があればセッション状態を更新
-    if speech_result:
-        st.session_state.speech_text = speech_result
+    create_speech_component(key="push_mic")
     
     st.write("---")
-    st.write("📝 **認識されたテキスト**")
+    st.write("📝 **認識されたテキストを貼り付けて送信**")
+    st.caption("👆 上の「📋コピー」ボタンを押してから、ここに貼り付けてください")
     
-    # テキストエリア（認識結果を反映）
+    # テキストエリア（セッション状態の値を使用）
     recognized_text = st.text_area(
-        "認識されたテキスト（編集可能）", 
+        "認識されたテキスト（Ctrl+V または Cmd+V で貼り付け）", 
         value=st.session_state.get("speech_text", ""),
         height=100,
         key="text_area_push"
     )
+    
+    # セッション状態を更新
+    if recognized_text:
+        st.session_state.speech_text = recognized_text
     
     # 送信ボタン
     if st.button("送信", type="primary"):
@@ -754,22 +776,23 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
     use_web_search = st.checkbox("情報がない場合はWeb検索する", value=False, key="web_search_continuous")
     
     # 常にマイクモード用コンポーネント
-    speech_result = create_continuous_speech_component(WAKE_WORD)
-    
-    # 認識結果があればセッション状態を更新
-    if speech_result:
-        st.session_state.speech_text = speech_result
+    create_continuous_speech_component(WAKE_WORD)
     
     st.write("---")
-    st.write("📝 **認識されたテキスト**")
+    st.write("📝 **認識されたテキストを貼り付けて送信**")
+    st.caption("👆 上の「📋コピー」ボタンを押してから、ここに貼り付けてください")
     
-    # テキストエリア（認識結果を反映）
+    # テキストエリア（セッション状態の値を使用）
     recognized_text = st.text_area(
-        "認識された質問（編集可能）", 
+        "認識された質問（Ctrl+V または Cmd+V で貼り付け）", 
         value=st.session_state.get("speech_text", ""),
         height=100,
         key="text_area_continuous"
     )
+    
+    # セッション状態を更新
+    if recognized_text:
+        st.session_state.speech_text = recognized_text
     
     # 送信ボタン
     if st.button("送信", type="primary"):
@@ -853,7 +876,7 @@ def main():
     if mode == "⌨️ テキスト入力":
         st.caption("キーボードで入力します")
     elif mode == "🎤 マイク押下":
-        st.caption("マイクボタンを押して話します（認識結果が自動転送されます）")
+        st.caption("マイクボタンを押して話します")
     else:
         st.caption(f"常にマイクが有効です。「{WAKE_WORD}」と言ってから質問してください")
     
