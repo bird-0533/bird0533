@@ -5,7 +5,7 @@ import streamlit.components.v1 as components
 from PyPDF2 import PdfReader
 from duckduckgo_search import DDGS
 import os
-import base64  # ← 追加
+import base64
 
 # ====================
 # 設定
@@ -196,6 +196,8 @@ def init_session_state():
         st.session_state.pdf_documents = []
     if "selected_category" not in st.session_state:
         st.session_state.selected_category = "すべて"
+    if "autoplay" not in st.session_state:
+        st.session_state.autoplay = True
 
 # ====================
 # 音声入力HTML（マイク押下モード）
@@ -391,6 +393,7 @@ def show_login_screen():
 def show_sidebar():
     st.sidebar.header("⚙️ 設定")
     
+    # APIキー取得
     try:
         default_claude = st.secrets["CLAUDE_API_KEY"]
     except:
@@ -406,6 +409,7 @@ def show_sidebar():
     except:
         default_voice = ""
     
+    # 管理者のみAPIキー入力可能
     if st.session_state.is_admin:
         st.sidebar.subheader("🔑 API設定（管理者）")
         claude_api_key = st.sidebar.text_input(
@@ -427,6 +431,7 @@ def show_sidebar():
             help="ElevenLabsで作成したボイスのID"
         )
         
+        # PDF管理（管理者のみ）
         st.sidebar.header("📄 ドキュメント管理")
         
         pdf_categories = ["就業規則", "性格情報", "仕事マニュアル", "その他"]
@@ -473,6 +478,7 @@ def show_sidebar():
             st.session_state.selected_category = st.sidebar.selectbox("カテゴリ", categories)
     
     else:
+        # 一般ユーザー：Secretsから自動取得
         claude_api_key = default_claude
         elevenlabs_api_key = default_elevenlabs
         elevenlabs_voice_id = default_voice
@@ -482,6 +488,18 @@ def show_sidebar():
     
     st.sidebar.divider()
     
+    # 音声自動再生の切り替え
+    st.sidebar.subheader("🔊 音声設定")
+    autoplay = st.sidebar.checkbox(
+        "音声を自動再生する", 
+        value=st.session_state.autoplay,
+        help="ON: 回答後に自動で音声再生 / OFF: 手動で再生ボタンを押す"
+    )
+    st.session_state.autoplay = autoplay
+    
+    st.sidebar.divider()
+    
+    # ユーザー情報表示
     if st.session_state.is_admin:
         st.sidebar.caption("👤 管理者")
     else:
@@ -520,6 +538,7 @@ def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
             question = user_input.strip()
             st.write(f"**質問:** {question}")
             
+            # コンテキスト準備
             context = ""
             if st.session_state.pdf_documents:
                 filtered_docs = st.session_state.pdf_documents
@@ -531,21 +550,25 @@ def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
                 for doc in filtered_docs:
                     context += f"\n\n=== {doc['name']} ===\n{doc['text']}"
             
+            # AI回答
             with st.spinner("考え中..."):
                 answer = get_ai_response(question, claude_api_key, context)
             
             st.write(f"**回答:** {answer}")
             
+            # Web検索
             if use_web_search:
                 with st.spinner("Web検索中..."):
                     search_results = web_search(question)
                 st.write(f"**Web検索結果:**\n{search_results}")
             
+            # 音声合成
             with st.spinner("音声生成中..."):
                 try:
                     audio_bytes = synthesize_voice(answer, elevenlabs_api_key, elevenlabs_voice_id)
                     st.audio(audio_bytes, format="audio/mp3")
-                    play_audio_autoplay(audio_bytes)  # 自動再生
+                    if st.session_state.autoplay:
+                        play_audio_autoplay(audio_bytes)
                 except Exception as e:
                     st.error(f"音声生成エラー: {str(e)}")
 
@@ -583,6 +606,7 @@ def show_push_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
             question = recognized_text.strip()
             st.write(f"**質問:** {question}")
             
+            # コンテキスト準備
             context = ""
             if st.session_state.pdf_documents:
                 filtered_docs = st.session_state.pdf_documents
@@ -594,21 +618,25 @@ def show_push_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
                 for doc in filtered_docs:
                     context += f"\n\n=== {doc['name']} ===\n{doc['text']}"
             
+            # AI回答
             with st.spinner("考え中..."):
                 answer = get_ai_response(question, claude_api_key, context)
             
             st.write(f"**回答:** {answer}")
             
+            # Web検索
             if use_web_search:
                 with st.spinner("Web検索中..."):
                     search_results = web_search(question)
                 st.write(f"**Web検索結果:**\n{search_results}")
             
+            # 音声合成
             with st.spinner("音声生成中..."):
                 try:
                     audio_bytes = synthesize_voice(answer, elevenlabs_api_key, elevenlabs_voice_id)
                     st.audio(audio_bytes, format="audio/mp3")
-                    play_audio_autoplay(audio_bytes)  # 自動再生
+                    if st.session_state.autoplay:
+                        play_audio_autoplay(audio_bytes)
                 except Exception as e:
                     st.error(f"音声生成エラー: {str(e)}")
 
@@ -647,6 +675,7 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
             question = recognized_text.strip()
             st.write(f"**質問:** {question}")
             
+            # コンテキスト準備
             context = ""
             if st.session_state.pdf_documents:
                 filtered_docs = st.session_state.pdf_documents
@@ -658,21 +687,25 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
                 for doc in filtered_docs:
                     context += f"\n\n=== {doc['name']} ===\n{doc['text']}"
             
+            # AI回答
             with st.spinner("考え中..."):
                 answer = get_ai_response(question, claude_api_key, context)
             
             st.write(f"**回答:** {answer}")
             
+            # Web検索
             if use_web_search:
                 with st.spinner("Web検索中..."):
                     search_results = web_search(question)
                 st.write(f"**Web検索結果:**\n{search_results}")
             
+            # 音声合成
             with st.spinner("音声生成中..."):
                 try:
                     audio_bytes = synthesize_voice(answer, elevenlabs_api_key, elevenlabs_voice_id)
                     st.audio(audio_bytes, format="audio/mp3")
-                    play_audio_autoplay(audio_bytes)  # 自動再生
+                    if st.session_state.autoplay:
+                        play_audio_autoplay(audio_bytes)
                 except Exception as e:
                     st.error(f"音声生成エラー: {str(e)}")
 
@@ -688,12 +721,15 @@ def main():
     
     st.title("🤖 AIアシスタント「バード」")
     
+    # セッション状態初期化
     init_session_state()
     
+    # 認証チェック
     if not st.session_state.authenticated:
         show_login_screen()
         return
     
+    # サイドバー表示
     claude_api_key, elevenlabs_api_key, elevenlabs_voice_id = show_sidebar()
     
     st.divider()
