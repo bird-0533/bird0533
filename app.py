@@ -5,6 +5,7 @@ import streamlit.components.v1 as components
 from PyPDF2 import PdfReader
 from duckduckgo_search import DDGS
 import os
+import base64  # ← 追加
 
 # ====================
 # 設定
@@ -166,6 +167,20 @@ def synthesize_voice(text, api_key, voice_id):
     return b''.join(audio_generator)
 
 # ====================
+# 音声自動再生
+# ====================
+def play_audio_autoplay(audio_bytes):
+    """音声を自動再生"""
+    audio_base64 = base64.b64encode(audio_bytes).decode()
+    audio_html = f"""
+    <audio autoplay>
+        <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
+        お使いのブラウザは音声再生に対応していません。
+    </audio>
+    """
+    components.html(audio_html, height=0)
+
+# ====================
 # セッション状態初期化
 # ====================
 def init_session_state():
@@ -186,7 +201,6 @@ def init_session_state():
 # 音声入力HTML（マイク押下モード）
 # ====================
 def get_speech_recognition_html():
-    """マイク押下モード用のHTML"""
     return """
     <script>
     function startRecognition() {
@@ -226,7 +240,6 @@ def get_speech_recognition_html():
 # 常にマイクモード用HTML
 # ====================
 def get_continuous_speech_html(wake_word="バード"):
-    """常にマイクモード用のHTML（ウェイクワード検出）"""
     return f"""
     <script>
     let recognition = null;
@@ -264,10 +277,8 @@ def get_continuous_speech_html(wake_word="バード"):
                 }}
             }}
             
-            // ウェイクワードが含まれているかチェック
             const fullText = finalTranscript || interimTranscript;
             if (fullText.includes(wakeWord)) {{
-                // ウェイクワードを除去したテキストを取得
                 const question = fullText.replace(wakeWord, '').trim();
                 if (question.length > 0) {{
                     document.getElementById('result').value = question;
@@ -279,7 +290,6 @@ def get_continuous_speech_html(wake_word="バード"):
                 }}
             }}
             
-            // 現在認識中のテキストを表示
             if (interimTranscript) {{
                 document.getElementById('interim').innerText = '認識中: ' + interimTranscript;
             }}
@@ -295,7 +305,6 @@ def get_continuous_speech_html(wake_word="バード"):
         
         recognition.onend = function() {{
             if (isListening) {{
-                // 自動で再開（連続モード）
                 try {{
                     recognition.start();
                 }} catch (e) {{
@@ -374,7 +383,7 @@ def show_login_screen():
                 st.success("認証成功！")
             st.rerun()
         else:
-            st.error("無効な招待コードです")
+            st.error("無効な招待コード")
 
 # ====================
 # サイドバー
@@ -536,7 +545,7 @@ def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
                 try:
                     audio_bytes = synthesize_voice(answer, elevenlabs_api_key, elevenlabs_voice_id)
                     st.audio(audio_bytes, format="audio/mp3")
-                    play_audio_autoplay(audio_bytes)
+                    play_audio_autoplay(audio_bytes)  # 自動再生
                 except Exception as e:
                     st.error(f"音声生成エラー: {str(e)}")
 
@@ -599,6 +608,7 @@ def show_push_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
                 try:
                     audio_bytes = synthesize_voice(answer, elevenlabs_api_key, elevenlabs_voice_id)
                     st.audio(audio_bytes, format="audio/mp3")
+                    play_audio_autoplay(audio_bytes)  # 自動再生
                 except Exception as e:
                     st.error(f"音声生成エラー: {str(e)}")
 
@@ -662,6 +672,7 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
                 try:
                     audio_bytes = synthesize_voice(answer, elevenlabs_api_key, elevenlabs_voice_id)
                     st.audio(audio_bytes, format="audio/mp3")
+                    play_audio_autoplay(audio_bytes)  # 自動再生
                 except Exception as e:
                     st.error(f"音声生成エラー: {str(e)}")
 
