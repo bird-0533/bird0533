@@ -536,6 +536,7 @@ def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
                 try:
                     audio_bytes = synthesize_voice(answer, elevenlabs_api_key, elevenlabs_voice_id)
                     st.audio(audio_bytes, format="audio/mp3")
+                    play_audio_autoplay(audio_bytes)
                 except Exception as e:
                     st.error(f"音声生成エラー: {str(e)}")
 
