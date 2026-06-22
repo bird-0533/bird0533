@@ -200,104 +200,8 @@ def init_session_state():
         st.session_state.autoplay = True
     if "speech_text" not in st.session_state:
         st.session_state.speech_text = ""
-
-# ====================
-# 音声認識コンポーネント（自動送信対応版）
-# ====================
-def speech_to_text_component(key="speech"):
-    """音声認識コンポーネント（認識結果を返す）"""
-    
-    # 一意のキーを生成
-    component_id = f"speech_component_{key}"
-    
-    # JavaScript コンポーネント
-    html_code = """
-    <div style="padding: 15px; border: 1px solid #ccc; border-radius: 10px; margin: 10px 0;">
-        <button id="startBtn" style="padding: 10px 20px; font-size: 16px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;">
-            🎤 マイクで話す
-        </button>
-        <button id="clearBtn" style="padding: 10px 20px; font-size: 16px; background-color: #f44336; color: white; border: none; border-radius: 5px; cursor: pointer;">
-            🗑️ クリア
-        </button>
-        <p id="status" style="margin-top: 10px; color: gray;">準備完了 - マイクボタンを押して話してください</p>
-        <textarea id="result" style="width: 100%; height: 80px; margin-top: 10px; font-size: 16px;" placeholder="認識されたテキスト..."></textarea>
-    </div>
-
-    <script>
-    let recognition = null;
-    
-    document.getElementById('startBtn').addEventListener('click', function() {
-        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-            alert('お使いのブラウザは音声認識に対応していません。');
-            return;
-        }
-        
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        recognition = new SpeechRecognition();
-        recognition.lang = 'ja-JP';
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        
-        recognition.onstart = function() {
-            document.getElementById('status').innerText = '🎤 認識中... 話してください';
-            document.getElementById('status').style.color = 'blue';
-        };
-        
-        recognition.onresult = function(event) {
-            const text = event.results[0][0].transcript;
-            document.getElementById('result').value = text;
-            document.getElementById('status').innerText = '✅ 認識完了！自動的に送信されます...';
-            document.getElementById('status').style.color = 'green';
-            
-            // Streamlitに値を送信
-            window.parent.postMessage({
-                type: 'streamlit:setComponentValue',
-                data: text
-            }, '*');
-        };
-        
-        recognition.onerror = function(event) {
-            let errorMessage = '❌ エラー: ';
-            switch(event.error) {
-                case 'network':
-                    errorMessage += 'ネットワークエラー\\n対処法: インターネット接続確認、VPNをオフ、別ネットワークで試す';
-                    break;
-                case 'not-allowed':
-                    errorMessage += 'マイクの使用が許可されていません。ブラウザの設定でマイクを許可してください。';
-                    break;
-                case 'no-speech':
-                    errorMessage += '音声が検出されませんでした。マイクに向かって話してください。';
-                    break;
-                case 'audio-capture':
-                    errorMessage += 'マイクが見つかりません。マイクが接続されているか確認してください。';
-                    break;
-                default:
-                    errorMessage += event.error;
-            }
-            document.getElementById('status').innerText = errorMessage;
-            document.getElementById('status').style.color = 'red';
-            alert(errorMessage);
-        };
-        
-        recognition.start();
-    });
-    
-    document.getElementById('clearBtn').addEventListener('click', function() {
-        document.getElementById('result').value = '';
-        document.getElementById('status').innerText = '準備完了';
-        document.getElementById('status').style.color = 'gray';
-        window.parent.postMessage({
-            type: 'streamlit:setComponentValue',
-            data: ''
-        }, '*');
-    });
-    </script>
-    """
-    
-    # コンポーネントを表示
-    result = components.html(html_code, height=200)
-    
-    return result
+    if "last_speech_text" not in st.session_state:
+        st.session_state.last_speech_text = ""
 
 # ====================
 # ログイン画面
@@ -526,11 +430,12 @@ def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
                     st.error(f"音声生成エラー: {str(e)}")
 
 # ====================
-# マイク押下モード（自動送信版）
+# マイク押下モード
 # ====================
 def show_push_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
     st.subheader("🎤 マイク押下モード")
-    st.write("マイクボタンを押して話してください（認識後に自動送信）")
+    st.write("マイクボタンを押して話してください")
+    st.info("💡 認識されたテキストは自動的に下の欄にコピーされます")
     
     if st.session_state.pdf_documents:
         total_chars = sum(
@@ -541,67 +446,141 @@ def show_push_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
     
     use_web_search = st.checkbox("情報がない場合はWeb検索する", value=False)
     
-    # 音声認識コンポーネントを表示
-    speech_result = speech_to_text_component(key="push_mic")
+    # 音声認識HTML
+    speech_html = """
+    <style>
+    .speech-box {
+        padding: 20px;
+        border: 1px solid #ccc;
+        border-radius: 10px;
+        margin: 10px 0;
+        background-color: #f9f9f9;
+    }
+    .speech-btn {
+        padding: 12px 24px;
+        font-size: 16px;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-right: 10px;
+    }
+    .speech-btn:hover {
+        background-color: #45a049;
+    }
+    .clear-btn {
+        padding: 12px 24px;
+        font-size: 16px;
+        background-color: #f44336;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+    }
+    .clear-btn:hover {
+        background-color: #da190b;
+    }
+    .result-area {
+        width: 100%;
+        height: 80px;
+        margin-top: 15px;
+        padding: 10px;
+        font-size: 16px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+    }
+    </style>
+    <div class="speech-box">
+        <button class="speech-btn" onclick="startRecognition()">🎤 マイクで話す</button>
+        <button class="clear-btn" onclick="clearText()">🗑️ クリア</button>
+        <p id="status" style="margin-top: 10px; color: gray;">準備完了</p>
+        <textarea id="result" class="result-area" placeholder="認識されたテキスト..."></textarea>
+    </div>
     
-    # 音声認識結果があれば自動送信
-    if speech_result and speech_result != st.session_state.get("last_speech_text", ""):
-        st.session_state.last_speech_text = speech_result
-        st.session_state.speech_text = speech_result
+    <script>
+    function startRecognition() {
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            alert('お使いのブラウザは音声認識に対応していません。');
+            return;
+        }
         
-        # 認識結果を表示
-        st.write(f"**認識されたテキスト:** {speech_result}")
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'ja-JP';
+        recognition.continuous = false;
+        recognition.interimResults = false;
         
-        # 自動送信
-        if speech_result.strip():
-            question = speech_result.strip()
+        recognition.onstart = function() {
+            document.getElementById('status').innerText = '🎤 認識中... 話してください';
+            document.getElementById('status').style.color = 'blue';
+        };
+        
+        recognition.onresult = function(event) {
+            const text = event.results[0][0].transcript;
+            document.getElementById('result').value = text;
+            document.getElementById('status').innerText = '✅ 認識完了！下のテキストエリアを確認して送信してください';
+            document.getElementById('status').style.color = 'green';
             
-            # コンテキスト準備
-            context = ""
-            if st.session_state.pdf_documents:
-                filtered_docs = st.session_state.pdf_documents
-                if st.session_state.selected_category != "すべて":
-                    filtered_docs = [
-                        doc for doc in st.session_state.pdf_documents 
-                        if doc["category"] == st.session_state.selected_category
-                    ]
-                for doc in filtered_docs:
-                    context += f"\n\n=== {doc['name']} ===\n{doc['text']}"
-            
-            # AI回答
-            with st.spinner("考え中..."):
-                answer = get_ai_response(question, claude_api_key, context)
-            
-            st.write(f"**回答:** {answer}")
-            
-            # Web検索
-            if use_web_search:
-                with st.spinner("Web検索中..."):
-                    search_results = web_search(question)
-                st.write(f"**Web検索結果:**\n{search_results}")
-            
-            # 音声合成
-            with st.spinner("音声生成中..."):
-                try:
-                    audio_bytes = synthesize_voice(answer, elevenlabs_api_key, elevenlabs_voice_id)
-                    st.audio(audio_bytes, format="audio/mp3")
-                    if st.session_state.autoplay:
-                        play_audio_autoplay(audio_bytes)
-                except Exception as e:
-                    st.error(f"音声生成エラー: {str(e)}")
+            // Streamlitに値を送信
+            window.parent.postMessage({
+                type: 'streamlit:setComponentValue',
+                data: text
+            }, '*');
+        };
+        
+        recognition.onerror = function(event) {
+            let msg = '❌ エラー: ';
+            switch(event.error) {
+                case 'network':
+                    msg += 'ネットワークエラー。VPNをオフにするか別のネットワークで試してください。';
+                    break;
+                case 'not-allowed':
+                    msg += 'マイクの使用が許可されていません。';
+                    break;
+                case 'no-speech':
+                    msg += '音声が検出されませんでした。';
+                    break;
+                default:
+                    msg += event.error;
+            }
+            document.getElementById('status').innerText = msg;
+            document.getElementById('status').style.color = 'red';
+        };
+        
+        recognition.start();
+    }
+    
+    function clearText() {
+        document.getElementById('result').value = '';
+        document.getElementById('status').innerText = '準備完了';
+        document.getElementById('status').style.color = 'gray';
+    }
+    </script>
+    """
+    
+    components.html(speech_html, height=250)
+    
+    st.write("---")
+    st.write("📝 **認識されたテキストを確認して送信**")
     
     # 手動入力用のテキストエリア
-    st.write("---")
-    st.write("📝 **または、手動で入力**")
-    manual_text = st.text_area("質問を入力してください", height=100, key="manual_input_push")
+    recognized_text = st.text_area(
+        "認識されたテキスト（編集可能）", 
+        value=st.session_state.get("speech_text", ""),
+        height=100
+    )
     
-    if st.button("送信（手動）", type="primary"):
-        if not manual_text:
-            st.warning("テキストを入力してください")
+    # セッション状態を更新
+    st.session_state.speech_text = recognized_text
+    
+    if st.button("送信", type="primary"):
+        if not recognized_text or not recognized_text.strip():
+            st.warning("テキストを入力してください。マイクボタンを押して話すか、手動で入力してください。")
         elif not claude_api_key or not elevenlabs_api_key or not elevenlabs_voice_id:
             st.warning("APIキーが設定されていません。管理者にお問い合わせください。")
         else:
-            question = manual_text.strip()
+            question = recognized_text.strip()
             st.write(f"**質問:** {question}")
             
             # コンテキスト準備
@@ -655,18 +634,18 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
     
     use_web_search = st.checkbox("情報がない場合はWeb検索する", value=False)
     
-    # 音声認識コンポーネント（常にマイク版）
+    # 常にマイクモードHTML
     continuous_html = f"""
     <style>
-    .continuous-container {{
+    .continuous-box {{
         padding: 20px;
         border: 1px solid #4CAF50;
         border-radius: 10px;
         margin: 10px 0;
         background-color: #f9f9f9;
     }}
-    .mic-button {{
-        padding: 10px 20px;
+    .mic-btn {{
+        padding: 12px 24px;
         font-size: 16px;
         background-color: #4CAF50;
         color: white;
@@ -675,11 +654,11 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
         cursor: pointer;
         margin-right: 10px;
     }}
-    .mic-button:hover {{
+    .mic-btn:hover {{
         background-color: #45a049;
     }}
-    .stop-button {{
-        padding: 10px 20px;
+    .stop-btn {{
+        padding: 12px 24px;
         font-size: 16px;
         background-color: #f44336;
         color: white;
@@ -687,16 +666,27 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
         border-radius: 5px;
         cursor: pointer;
     }}
-    .stop-button:hover {{
+    .stop-btn:hover {{
         background-color: #da190b;
     }}
     </style>
+    <div class="continuous-box">
+        <p style="margin: 0 0 10px 0; font-weight: bold;">🎙️ 常にマイクモード</p>
+        <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">
+            「{WAKE_WORD}」と言ってから質問してください
+        </p>
+        <button class="mic-btn" onclick="startContinuous()">🎤 開始</button>
+        <button class="stop-btn" onclick="stopContinuous()">⏹️ 停止</button>
+        <p id="status" style="margin-top: 10px; color: gray;">準備完了</p>
+        <p id="interim" style="margin-top: 5px; color: #666; font-size: 14px;"></p>
+    </div>
+    
     <script>
     let recognition = null;
     let isListening = false;
     const wakeWord = '{WAKE_WORD}';
     
-    function startContinuousRecognition() {{
+    function startContinuous() {{
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {{
             alert('お使いのブラウザは音声認識に対応していません。');
             return;
@@ -709,7 +699,7 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
         recognition.interimResults = true;
         
         recognition.onstart = function() {{
-            document.getElementById('status').innerText = '🎤 常にマイクモード：待機中...（「{WAKE_WORD}」と話しかけてください）';
+            document.getElementById('status').innerText = '🎤 待機中...「{WAKE_WORD}」と話しかけてください';
             document.getElementById('status').style.color = 'blue';
             isListening = true;
         }};
@@ -731,15 +721,12 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
             if (fullText.includes(wakeWord)) {{
                 const question = fullText.replace(wakeWord, '').trim();
                 if (question.length > 0) {{
-                    document.getElementById('result').value = question;
-                    document.getElementById('status').innerText = '✅ 質問を検出！自動的に送信されます...';
-                    document.getElementById('status').style.color = 'green';
-                    
-                    // Streamlitに値を送信
                     window.parent.postMessage({{
                         type: 'streamlit:setComponentValue',
                         data: question
                     }}, '*');
+                    document.getElementById('status').innerText = '✅ 質問を検出！';
+                    document.getElementById('status').style.color = 'green';
                 }} else {{
                     document.getElementById('status').innerText = '🎤 質問を聞いています...';
                     document.getElementById('status').style.color = 'orange';
@@ -752,22 +739,19 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
         }};
         
         recognition.onerror = function(event) {{
-            let errorMessage = '❌ エラー: ';
+            let msg = '❌ エラー: ';
             switch(event.error) {{
                 case 'network':
-                    errorMessage += 'ネットワークエラー';
+                    msg += 'ネットワークエラー';
                     break;
                 case 'not-allowed':
-                    errorMessage += 'マイクの使用が許可されていません';
+                    msg += 'マイクの使用が許可されていません';
                     break;
                 default:
-                    errorMessage += event.error;
+                    msg += event.error;
             }}
-            document.getElementById('status').innerText = errorMessage;
+            document.getElementById('status').innerText = msg;
             document.getElementById('status').style.color = 'red';
-            if (event.error !== 'no-speech') {{
-                stopContinuousRecognition();
-            }}
         }};
         
         recognition.onend = function() {{
@@ -783,7 +767,7 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
         recognition.start();
     }}
     
-    function stopContinuousRecognition() {{
+    function stopContinuous() {{
         if (recognition) {{
             isListening = false;
             recognition.stop();
@@ -793,81 +777,30 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
         }}
     }}
     </script>
-    
-    <div class="continuous-container">
-        <p style="margin: 0 0 10px 0; font-weight: bold;">🎙️ 常にマイクモード</p>
-        <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">
-            「{WAKE_WORD}」と言ってから質問してください。例：「{WAKE_WORD}、今日の天気は？」
-        </p>
-        <button class="mic-button" onclick="startContinuousRecognition()">🎤 開始</button>
-        <button class="stop-button" onclick="stopContinuousRecognition()">⏹️ 停止</button>
-        <p id="status" style="margin-top: 10px; color: gray;">準備完了</p>
-        <p id="interim" style="margin-top: 5px; color: #666; font-size: 14px;"></p>
-        <textarea id="result" style="width: 100%; height: 60px; margin-top: 10px;" placeholder="認識された質問（自動入力）"></textarea>
-    </div>
     """
     
-    # コンポーネントを表示
-    continuous_result = components.html(continuous_html, height=350)
+    components.html(continuous_html, height=280)
     
-    # 音声認識結果があれば自動送信
-    if continuous_result and continuous_result != st.session_state.get("last_continuous_text", ""):
-        st.session_state.last_continuous_text = continuous_result
-        st.session_state.speech_text = continuous_result
-        
-        # 認識結果を表示
-        st.write(f"**認識されたテキスト:** {continuous_result}")
-        
-        # 自動送信
-        if continuous_result.strip():
-            question = continuous_result.strip()
-            
-            # コンテキスト準備
-            context = ""
-            if st.session_state.pdf_documents:
-                filtered_docs = st.session_state.pdf_documents
-                if st.session_state.selected_category != "すべて":
-                    filtered_docs = [
-                        doc for doc in st.session_state.pdf_documents 
-                        if doc["category"] == st.session_state.selected_category
-                    ]
-                for doc in filtered_docs:
-                    context += f"\n\n=== {doc['name']} ===\n{doc['text']}"
-            
-            # AI回答
-            with st.spinner("考え中..."):
-                answer = get_ai_response(question, claude_api_key, context)
-            
-            st.write(f"**回答:** {answer}")
-            
-            # Web検索
-            if use_web_search:
-                with st.spinner("Web検索中..."):
-                    search_results = web_search(question)
-                st.write(f"**Web検索結果:**\n{search_results}")
-            
-            # 音声合成
-            with st.spinner("音声生成中..."):
-                try:
-                    audio_bytes = synthesize_voice(answer, elevenlabs_api_key, elevenlabs_voice_id)
-                    st.audio(audio_bytes, format="audio/mp3")
-                    if st.session_state.autoplay:
-                        play_audio_autoplay(audio_bytes)
-                except Exception as e:
-                    st.error(f"音声生成エラー: {str(e)}")
+    st.write("---")
+    st.write("📝 **認識されたテキストを確認して送信**")
     
     # 手動入力用のテキストエリア
-    st.write("---")
-    st.write("📝 **または、手動で入力**")
-    manual_text = st.text_area("質問を入力してください", height=100, key="manual_input_continuous")
+    recognized_text = st.text_area(
+        "認識された質問（編集可能）", 
+        value=st.session_state.get("speech_text", ""),
+        height=100
+    )
     
-    if st.button("送信（手動）", type="primary"):
-        if not manual_text:
-            st.warning("テキストを入力してください")
+    # セッション状態を更新
+    st.session_state.speech_text = recognized_text
+    
+    if st.button("送信", type="primary"):
+        if not recognized_text or not recognized_text.strip():
+            st.warning("テキストを入力してください。")
         elif not claude_api_key or not elevenlabs_api_key or not elevenlabs_voice_id:
             st.warning("APIキーが設定されていません。管理者にお問い合わせください。")
         else:
-            question = manual_text.strip()
+            question = recognized_text.strip()
             st.write(f"**質問:** {question}")
             
             # コンテキスト準備
@@ -942,7 +875,7 @@ def main():
     if mode == "⌨️ テキスト入力":
         st.caption("キーボードで入力します")
     elif mode == "🎤 マイク押下":
-        st.caption("マイクボタンを押して話します（認識後に自動送信）")
+        st.caption("マイクボタンを押して話します")
     else:
         st.caption(f"常にマイクが有効です。「{WAKE_WORD}」と言ってから質問してください")
     
