@@ -200,41 +200,117 @@ def init_session_state():
         st.session_state.autoplay = True
 
 # ====================
-# 音声入力HTML（マイク押下モード）
+# 音声入力HTML（マイク押下モード）- コピー機能付き
 # ====================
 def get_speech_recognition_html():
     return """
+    <style>
+    .speech-container {
+        padding: 20px;
+        border: 1px solid #ccc;
+        border-radius: 10px;
+        margin: 10px 0;
+    }
+    .speech-button {
+        padding: 10px 20px;
+        font-size: 16px;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-right: 10px;
+    }
+    .speech-button:hover {
+        background-color: #45a049;
+    }
+    .copy-button {
+        padding: 10px 20px;
+        font-size: 16px;
+        background-color: #2196F3;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+    }
+    .copy-button:hover {
+        background-color: #0b7dda;
+    }
+    </style>
     <script>
     function startRecognition() {
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
             alert('お使いのブラウザは音声認識に対応していません。');
             return;
         }
+        
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         const recognition = new SpeechRecognition();
         recognition.lang = 'ja-JP';
         recognition.continuous = false;
         recognition.interimResults = false;
+        
         recognition.onstart = function() {
             document.getElementById('status').innerText = '🎤 認識中...';
+            document.getElementById('status').style.color = 'blue';
         };
+        
         recognition.onresult = function(event) {
             const text = event.results[0][0].transcript;
             document.getElementById('result').value = text;
-            document.getElementById('status').innerText = '✅ 認識完了';
+            document.getElementById('status').innerText = '✅ 認識完了！「コピー」ボタンを押してください';
+            document.getElementById('status').style.color = 'green';
         };
+        
         recognition.onerror = function(event) {
-            document.getElementById('status').innerText = '❌ エラー: ' + event.error;
+            let errorMessage = '❌ エラー: ';
+            switch(event.error) {
+                case 'network':
+                    errorMessage += 'ネットワークエラー\\n\\n対処法:\\n1. インターネット接続を確認\\n2. VPNをオフにする\\n3. 別のネットワークで試す\\n4. Chromeブラウザで試す';
+                    break;
+                case 'not-allowed':
+                    errorMessage += 'マイクの使用が許可されていません。\\nブラウザの設定でマイクを許可してください。';
+                    break;
+                case 'no-speech':
+                    errorMessage += '音声が検出されませんでした。\\nマイクに向かって話してください。';
+                    break;
+                case 'audio-capture':
+                    errorMessage += 'マイクが見つかりません。\\nマイクが接続されているか確認してください。';
+                    break;
+                default:
+                    errorMessage += event.error;
+            }
+            document.getElementById('status').innerText = errorMessage;
+            document.getElementById('status').style.color = 'red';
+            alert(errorMessage);
         };
+        
         recognition.start();
     }
+    
+    function copyToClipboard() {
+        const text = document.getElementById('result').value;
+        if (text) {
+            navigator.clipboard.writeText(text).then(function() {
+                document.getElementById('status').innerText = '✅ コピーしました！下のテキストエリアに貼り付けて送信してください';
+                document.getElementById('status').style.color = 'green';
+                alert('テキストをコピーしました！\\n\\n下のテキストエリアに貼り付けて（Ctrl+V または Cmd+V）\\n「送信」ボタンを押してください。');
+            }).catch(function(err) {
+                document.getElementById('result').select();
+                document.execCommand('copy');
+                alert('テキストをコピーしました！\\n\\n下のテキストエリアに貼り付けて（Ctrl+V または Cmd+V）\\n「送信」ボタンを押してください。');
+            });
+        } else {
+            alert('コピーするテキストがありません。\\n先にマイクで話してください。');
+        }
+    }
     </script>
-    <div style="padding: 20px; border: 1px solid #ccc; border-radius: 10px; margin: 10px 0;">
-        <button onclick="startRecognition()" style="padding: 10px 20px; font-size: 16px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer;">
-            🎤 マイクで話す
-        </button>
-        <p id="status" style="margin-top: 10px;">準備完了</p>
-        <textarea id="result" style="width: 100%; height: 100px; margin-top: 10px;" placeholder="認識されたテキスト..."></textarea>
+    
+    <div class="speech-container">
+        <button class="speech-button" onclick="startRecognition()">🎤 マイクで話す</button>
+        <button class="copy-button" onclick="copyToClipboard()">📋 コピー</button>
+        <p id="status" style="margin-top: 10px; color: gray;">準備完了</p>
+        <textarea id="result" style="width: 100%; height: 80px; margin-top: 10px;" placeholder="認識されたテキスト..."></textarea>
     </div>
     """
 
@@ -243,6 +319,53 @@ def get_speech_recognition_html():
 # ====================
 def get_continuous_speech_html(wake_word="バード"):
     return f"""
+    <style>
+    .continuous-container {{
+        padding: 20px;
+        border: 1px solid #4CAF50;
+        border-radius: 10px;
+        margin: 10px 0;
+        background-color: #f9f9f9;
+    }}
+    .mic-button {{
+        padding: 10px 20px;
+        font-size: 16px;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-right: 10px;
+    }}
+    .mic-button:hover {{
+        background-color: #45a049;
+    }}
+    .stop-button {{
+        padding: 10px 20px;
+        font-size: 16px;
+        background-color: #f44336;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+    }}
+    .stop-button:hover {{
+        background-color: #da190b;
+    }}
+    .copy-button {{
+        padding: 10px 20px;
+        font-size: 16px;
+        background-color: #2196F3;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-left: 10px;
+    }}
+    .copy-button:hover {{
+        background-color: #0b7dda;
+    }}
+    </style>
     <script>
     let recognition = null;
     let isListening = false;
@@ -284,7 +407,7 @@ def get_continuous_speech_html(wake_word="バード"):
                 const question = fullText.replace(wakeWord, '').trim();
                 if (question.length > 0) {{
                     document.getElementById('result').value = question;
-                    document.getElementById('status').innerText = '✅ 質問を検出しました！「送信」ボタンを押してください。';
+                    document.getElementById('status').innerText = '✅ 質問を検出！「コピー」ボタンを押して送信してください';
                     document.getElementById('status').style.color = 'green';
                 }} else {{
                     document.getElementById('status').innerText = '🎤 質問を聞いています...';
@@ -298,7 +421,18 @@ def get_continuous_speech_html(wake_word="バード"):
         }};
         
         recognition.onerror = function(event) {{
-            document.getElementById('status').innerText = '❌ エラー: ' + event.error;
+            let errorMessage = '❌ エラー: ';
+            switch(event.error) {{
+                case 'network':
+                    errorMessage += 'ネットワークエラー';
+                    break;
+                case 'not-allowed':
+                    errorMessage += 'マイクの使用が許可されていません';
+                    break;
+                default:
+                    errorMessage += event.error;
+            }}
+            document.getElementById('status').innerText = errorMessage;
             document.getElementById('status').style.color = 'red';
             if (event.error !== 'no-speech') {{
                 stopContinuousRecognition();
@@ -327,22 +461,36 @@ def get_continuous_speech_html(wake_word="バード"):
             document.getElementById('status').style.color = 'gray';
         }}
     }}
+    
+    function copyToClipboardContinuous() {{
+        const text = document.getElementById('result').value;
+        if (text) {{
+            navigator.clipboard.writeText(text).then(function() {{
+                document.getElementById('status').innerText = '✅ コピーしました！下のテキストエリアに貼り付けて送信してください';
+                document.getElementById('status').style.color = 'green';
+                alert('テキストをコピーしました！\\n\\n下のテキストエリアに貼り付けて（Ctrl+V または Cmd+V）\\n「送信」ボタンを押してください。');
+            }}).catch(function(err) {{
+                document.getElementById('result').select();
+                document.execCommand('copy');
+                alert('テキストをコピーしました！\\n\\n下のテキストエリアに貼り付けて（Ctrl+V または Cmd+V）\\n「送信」ボタンを押してください。');
+            }});
+        }} else {{
+            alert('コピーするテキストがありません。\\n先に「{wake_word}」と言ってから質問してください。');
+        }}
+    }}
     </script>
     
-    <div style="padding: 20px; border: 1px solid #4CAF50; border-radius: 10px; margin: 10px 0; background-color: #f9f9f9;">
+    <div class="continuous-container">
         <p style="margin: 0 0 10px 0; font-weight: bold;">🎙️ 常にマイクモード</p>
         <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">
             「{wake_word}」と言ってから質問してください。例：「{wake_word}、今日の天気は？」
         </p>
-        <button onclick="startContinuousRecognition()" style="padding: 10px 20px; font-size: 16px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;">
-            🎤 開始
-        </button>
-        <button onclick="stopContinuousRecognition()" style="padding: 10px 20px; font-size: 16px; background-color: #f44336; color: white; border: none; border-radius: 5px; cursor: pointer;">
-            ⏹️ 停止
-        </button>
+        <button class="mic-button" onclick="startContinuousRecognition()">🎤 開始</button>
+        <button class="stop-button" onclick="stopContinuousRecognition()">⏹️ 停止</button>
+        <button class="copy-button" onclick="copyToClipboardContinuous()">📋 コピー</button>
         <p id="status" style="margin-top: 10px; color: gray;">準備完了</p>
         <p id="interim" style="margin-top: 5px; color: #666; font-size: 14px;"></p>
-        <textarea id="result" style="width: 100%; height: 80px; margin-top: 10px;" placeholder="認識された質問（自動入力）"></textarea>
+        <textarea id="result" style="width: 100%; height: 60px; margin-top: 10px;" placeholder="認識された質問（自動入力）"></textarea>
     </div>
     """
 
@@ -586,12 +734,15 @@ def show_push_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
         )
         st.info(f"📄 {len(st.session_state.pdf_documents)}個のPDF読み込み中（合計{total_chars}文字）")
     
-    components.html(get_speech_recognition_html(), height=300)
+    # 音声認識コンポーネント
+    components.html(get_speech_recognition_html(), height=280)
     
     st.write("---")
+    st.write("📝 **認識されたテキストを貼り付けて送信**")
     
+    # Streamlit側のテキストエリア
     recognized_text = st.text_area(
-        "認識されたテキスト（編集可能）", 
+        "認識されたテキスト（コピーしたテキストを貼り付け）", 
         st.session_state.recognized_text, 
         height=100
     )
@@ -599,7 +750,7 @@ def show_push_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
     
     if st.button("送信", type="primary"):
         if not recognized_text:
-            st.warning("テキストを入力してください")
+            st.warning("テキストを入力してください。上の「コピー」ボタンを押して、ここに貼り付けてください。")
         elif not claude_api_key or not elevenlabs_api_key or not elevenlabs_voice_id:
             st.warning("APIキーが設定されていません。管理者にお問い合わせください。")
         else:
@@ -655,12 +806,15 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
         )
         st.info(f"📄 {len(st.session_state.pdf_documents)}個のPDF読み込み中（合計{total_chars}文字）")
     
+    # 音声認識コンポーネント
     components.html(get_continuous_speech_html(WAKE_WORD), height=350)
     
     st.write("---")
+    st.write("📝 **認識されたテキストを貼り付けて送信**")
     
+    # Streamlit側のテキストエリア
     recognized_text = st.text_area(
-        "認識された質問（編集可能）", 
+        "認識された質問（コピーしたテキストを貼り付け）", 
         st.session_state.recognized_text, 
         height=100
     )
@@ -668,7 +822,7 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
     
     if st.button("送信", type="primary"):
         if not recognized_text:
-            st.warning("テキストを入力してください")
+            st.warning("テキストを入力してください。上の「コピー」ボタンを押して、ここに貼り付けてください。")
         elif not claude_api_key or not elevenlabs_api_key or not elevenlabs_voice_id:
             st.warning("APIキーが設定されていません。管理者にお問い合わせください。")
         else:
@@ -691,7 +845,7 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
             with st.spinner("考え中..."):
                 answer = get_ai_response(question, claude_api_key, context)
             
-            st.write(f"**回答:** {answer}")
+            st.write(f"**回答:** {question}")
             
             # Web検索
             if use_web_search:
