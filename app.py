@@ -202,32 +202,34 @@ def init_session_state():
         st.session_state.speech_text = ""
 
 # ====================
-# 音声認識コンポーネント（自動転送版）
+# 音声認識コンポーネント（コピー機能付き）
 # ====================
 def create_speech_component(key="speech"):
-    """音声認識コンポーネントを作成し、認識テキストを返す"""
+    """音声認識コンポーネントを作成（コピーボタン付き）"""
     
     html_code = """
-    <div style="padding: 15px; border: 1px solid #ccc; border-radius: 10px; margin: 10px 0;">
+    <div style="padding: 20px; border: 1px solid #ccc; border-radius: 10px; margin: 10px 0; background-color: #f9f9f9;">
+        <p style="margin: 0 0 15px 0; font-weight: bold; color: #333;">🎤 音声認識</p>
+        <p style="margin: 0 0 15px 0; color: #666; font-size: 14px;">
+            ① マイクボタンを押して話す<br>
+            ② 認識されたテキストを確認<br>
+            ③ 📋コピーボタンを押す<br>
+            ④ 下のテキストエリアに貼り付けて送信
+        </p>
         <button id="startBtn" style="padding: 12px 24px; font-size: 16px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;">
             🎤 マイクで話す
+        </button>
+        <button id="copyBtn" style="padding: 12px 24px; font-size: 16px; background-color: #2196F3; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;">
+            📋 コピー
         </button>
         <button id="clearBtn" style="padding: 12px 24px; font-size: 16px; background-color: #f44336; color: white; border: none; border-radius: 5px; cursor: pointer;">
             🗑️ クリア
         </button>
-        <p id="status" style="margin-top: 10px; color: gray;">準備完了 - マイクボタンを押して話してください</p>
+        <p id="status" style="margin-top: 15px; color: gray;">準備完了</p>
         <textarea id="result" style="width: 100%; height: 80px; margin-top: 10px; font-size: 16px; padding: 10px; border: 1px solid #ddd; border-radius: 5px;" placeholder="認識されたテキスト..."></textarea>
     </div>
 
     <script>
-    // 親ウィンドウに値を送信する関数
-    function sendToStreamlit(text) {
-        window.parent.postMessage({
-            type: 'streamlit:setComponentValue',
-            data: text
-        }, '*');
-    }
-    
     document.getElementById('startBtn').addEventListener('click', function() {
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
             alert('お使いのブラウザは音声認識に対応していません。');
@@ -248,11 +250,8 @@ def create_speech_component(key="speech"):
         recognition.onresult = function(event) {
             const text = event.results[0][0].transcript;
             document.getElementById('result').value = text;
-            document.getElementById('status').innerText = '✅ 認識完了！自動的に転送されます...';
+            document.getElementById('status').innerText = '✅ 認識完了！ 📋コピーボタンを押してください';
             document.getElementById('status').style.color = 'green';
-            
-            // Streamlitに値を送信
-            sendToStreamlit(text);
         };
         
         recognition.onerror = function(event) {
@@ -278,14 +277,33 @@ def create_speech_component(key="speech"):
         recognition.start();
     });
     
+    document.getElementById('copyBtn').addEventListener('click', function() {
+        const text = document.getElementById('result').value;
+        if (text) {
+            navigator.clipboard.writeText(text).then(function() {
+                document.getElementById('status').innerText = '✅ コピーしました！下のテキストエリアに貼り付けて送信してください';
+                document.getElementById('status').style.color = 'green';
+                alert('コピーしました！\\n\\n下のテキストエリアをクリックして、\\nCtrl+V（Mac: Cmd+V）で貼り付けてください。');
+            }).catch(function(err) {
+                document.getElementById('result').select();
+                document.execCommand('copy');
+                alert('コピーしました！\\n\\n下のテキストエリアをクリックして、\\nCtrl+V（Mac: Cmd+V）で貼り付けてください。');
+            });
+        } else {
+            alert('コピーするテキストがありません。\\n先に🎤マイクで話すボタンを押してください。');
+        }
+    });
+    
     document.getElementById('clearBtn').addEventListener('click', function() {
         document.getElementById('result').value = '';
         document.getElementById('status').innerText = '準備完了';
         document.getElementById('status').style.color = 'gray';
-        sendToStreamlit('');
     });
     </script>
     """
+    
+    components.html(html_code, height=320)
+
     
     # コンポーネントを表示し、結果を取得
     result = components.html(html_code, height=200)
