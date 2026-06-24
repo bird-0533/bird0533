@@ -6,6 +6,7 @@ from PyPDF2 import PdfReader
 from duckduckgo_search import DDGS
 import os
 import base64
+import re
 
 # ====================
 # 設定
@@ -48,6 +49,7 @@ MY_THINKING = """
 """
 
 MAX_PDF_CHARS = 50000
+MAX_HISTORY = 10  # 最大履歴数
 
 # ====================
 # 招待コード認証
@@ -131,9 +133,14 @@ def web_search(query, max_results=3):
         return f"検索エラー: {str(e)}\nしばらく時間を置いてから再試行してください。"
 
 # ====================
-# Claude API
+# Claude API（会話履歴対応）
 # ====================
-def get_ai_response(question, api_key, context=""):
+def get_ai_response(question, api_key, context="", history=None):
+    """Claude APIで回答を生成（会話履歴対応）"""
+    
+    if history is None:
+        history = []
+    
     client = anthropic.Anthropic(api_key=api_key)
     
     system_prompt = (
@@ -144,27 +151,110 @@ def get_ai_response(question, api_key, context=""):
     if context:
         system_prompt += f"\n\n以下のドキュメントの内容に基づいて回答してください：\n\n{context}"
     
+    # メッセージの構築
+    messages = []
+    
+    # 会話履歴を追加
+    for msg in history:
+        messages.append({"role": "user", "content": msg["user"]})
+        messages.append({"role": "assistant", "content": msg["assistant"]})
+    
+    # 現在の質問を追加
+    messages.append({"role": "user", "content": question})
+    
     message = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=4000,
         system=system_prompt,
-        messages=[{"role": "user", "content": question}]
+        messages=messages
     )
+    
     return message.content[0].text
 
 # ====================
 # ElevenLabs音声合成
 # ====================
+def preprocess_text_for_speech(text):
+    """音声読み上げのためにテキストを前処理"""
+    
+    # 余分な空白を削除
+    text = text.strip()
+    
+    # 改行を句点に変換
+    text = text.replace('\n', '。')
+    text = text.replace('\r', '')
+    
+    # 連続する句読点を1つに
+    text = text.replace('。。', '。')
+    text = text.replace('、、', '。')
+    
+    # URLを除去
+    text = re.sub(r'https?://\S+', '', text)
+    
+    # マークダウン記号を除去
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    text = re.sub(r'`(.+?)`', r'\1', text)
+    
+    # 鉤括弧を読みやすく
+    text = text.replace('【', '')
+    text = text.replace('】', '')
+    text = text.replace('「', '')
+    text = text.replace('」', '')
+    
+    # 記号の処理
+    text = text.replace('→', '、')
+    text = text.replace('←', '、')
+    text = text.replace('・', '、')
+    text = text.replace('•', '、')
+    text = text.replace('※', '')
+    text = text.replace('♪', '')
+    
+    return text
+
 def synthesize_voice(text, api_key, voice_id):
+    """ElevenLabsで音声を合成"""
+    
     client = ElevenLabs(api_key=api_key)
     
-    audio_generator = client.text_to_speech.convert(
-        text=text,
-        voice_id=voice_id,
-        model_id="eleven_multilingual_v2"
-    )
+    # テキストを前処理
+    processed_text = preprocess_text_for_speech(text)
     
-    return b''.join(audio_generator)
+    # 長いテキストの場合は分割
+    max_chars = 500
+    if len(processed_text) > max_chars:
+        sentences = []
+        current_sentence = ""
+        for char in processed_text:
+            current_sentence += char
+            if char in ['。', '！', '？', '.', '!', '?']:
+                if len(current_sentence) > 50:
+                    sentences.append(current_sentence)
+                    current_sentence = ""
+        if current_sentence:
+            sentences.append(current_sentence)
+        
+        audio_parts = []
+        for sentence in sentences:
+            if sentence.strip():
+                try:
+                    audio_generator = client.text_to_speech.convert(
+                        text=sentence.strip(),
+                        voice_id=voice_id,
+                        model_id="eleven_multilingual_v2"
+                    )
+                    audio_parts.append(b''.join(audio_generator))
+                except Exception as e:
+                    print(f"音声合成エラー（分割）: {str(e)}")
+        
+        return b''.join(audio_parts) if audio_parts else b''
+    else:
+        audio_generator = client.text_to_speech.convert(
+            text=processed_text,
+            voice_id=voice_id,
+            model_id="eleven_multilingual_v2"
+        )
+        return b''.join(audio_generator)
 
 # ====================
 # 音声自動再生
@@ -200,6 +290,35 @@ def init_session_state():
         st.session_state.autoplay = True
     if "speech_text" not in st.session_state:
         st.session_state.speech_text = ""
+    if "conversation_history" not in st.session_state:
+        st.session_state.conversation_history = []
+
+# ====================
+# 会話履歴管理
+# ====================
+def add_to_history(question, answer):
+    """会話履歴に追加"""
+    st.session_state.conversation_history.append({
+        "user": question,
+        "assistant": answer
+    })
+    
+    # 最大履歴数を超えたら古いものを削除
+    if len(st.session_state.conversation_history) > MAX_HISTORY:
+        st.session_state.conversation_history = st.session_state.conversation_history[-MAX_HISTORY:]
+
+def clear_history():
+    """会話履歴をクリア"""
+    st.session_state.conversation_history = []
+
+def show_conversation_history():
+    """会話履歴を表示"""
+    if st.session_state.conversation_history:
+        with st.expander("📝 会話履歴を見る", expanded=False):
+            for i, msg in enumerate(reversed(st.session_state.conversation_history)):
+                st.write(f"**質問:** {msg['user']}")
+                st.write(f"**回答:** {msg['assistant'][:200]}..." if len(msg['assistant']) > 200 else f"**回答:** {msg['assistant']}")
+                st.divider()
 
 # ====================
 # 音声認識コンポーネント（マイク押下モード）
@@ -433,14 +552,14 @@ def create_continuous_speech_component(wake_word="バード"):
             navigator.clipboard.writeText(text).then(function() {{
                 document.getElementById('status').innerText = '✅ コピーしました！下のテキストエリアに貼り付けて送信してください';
                 document.getElementById('status').style.color = 'green';
-                alert('コピーしました！\\n\\n下のテキストエリアをクリックして、\\nCtrl+V（Mac: Cmd+V）で貼り付けてください。');
+                alert('コピーしました！\\n\\n下のテキストエリアをクリックして，\\nCtrl+V（Mac: Cmd+V）で貼り付けてください。');
             }}).catch(function(err) {{
                 document.getElementById('result').select();
                 document.execCommand('copy');
-                alert('コピーしました！\\n\\n下のテキストエリアをクリックして、\\nCtrl+V（Mac: Cmd+V）で貼り付けてください。');
+                alert('コピーしました！\\n\\n下のテキストエリアをクリックして，\\nCtrl+V（Mac: Cmd+V）で貼り付けてください。');
             }});
         }} else {{
-            alert('コピーするテキストがありません。\\n先に🎤開始ボタンを押して、「{wake_word}」と言ってから質問してください。');
+            alert('コピーするテキストがありません。\\n先に🎤開始ボタンを押して，「{wake_word}」と言ってから質問してください。');
         }}
     }});
     
@@ -607,6 +726,18 @@ def show_sidebar():
     
     st.sidebar.divider()
     
+    # 会話履歴
+    st.sidebar.subheader("💬 会話履歴")
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("🗑️ 履歴をクリア", use_container_width=True):
+            clear_history()
+            st.rerun()
+    with col2:
+        st.caption(f"履歴数: {len(st.session_state.conversation_history)}/{MAX_HISTORY}")
+    
+    st.sidebar.divider()
+    
     # ユーザー情報表示
     if st.session_state.is_admin:
         st.sidebar.caption("👤 管理者")
@@ -616,6 +747,7 @@ def show_sidebar():
     if st.sidebar.button("ログアウト"):
         st.session_state.authenticated = False
         st.session_state.is_admin = False
+        clear_history()
         st.rerun()
     
     return claude_api_key, elevenlabs_api_key, elevenlabs_voice_id
@@ -658,9 +790,17 @@ def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
                 for doc in filtered_docs:
                     context += f"\n\n=== {doc['name']} ===\n{doc['text']}"
             
-            # AI回答
+            # AI回答（会話履歴を渡す）
             with st.spinner("考え中..."):
-                answer = get_ai_response(question, claude_api_key, context)
+                answer = get_ai_response(
+                    question, 
+                    claude_api_key, 
+                    context, 
+                    st.session_state.conversation_history
+                )
+            
+            # 会話履歴に追加
+            add_to_history(question, answer)
             
             st.write(f"**回答:** {answer}")
             
@@ -679,6 +819,9 @@ def show_text_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
                         play_audio_autoplay(audio_bytes)
                 except Exception as e:
                     st.error(f"音声生成エラー: {str(e)}")
+    
+    # 会話履歴を表示
+    show_conversation_history()
 
 # ====================
 # マイク押下モード
@@ -737,9 +880,17 @@ def show_push_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
                 for doc in filtered_docs:
                     context += f"\n\n=== {doc['name']} ===\n{doc['text']}"
             
-            # AI回答
+            # AI回答（会話履歴を渡す）
             with st.spinner("考え中..."):
-                answer = get_ai_response(question, claude_api_key, context)
+                answer = get_ai_response(
+                    question, 
+                    claude_api_key, 
+                    context, 
+                    st.session_state.conversation_history
+                )
+            
+            # 会話履歴に追加
+            add_to_history(question, answer)
             
             st.write(f"**回答:** {answer}")
             
@@ -758,6 +909,9 @@ def show_push_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
                         play_audio_autoplay(audio_bytes)
                 except Exception as e:
                     st.error(f"音声生成エラー: {str(e)}")
+    
+    # 会話履歴を表示
+    show_conversation_history()
 
 # ====================
 # 常にマイクモード
@@ -816,9 +970,17 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
                 for doc in filtered_docs:
                     context += f"\n\n=== {doc['name']} ===\n{doc['text']}"
             
-            # AI回答
+            # AI回答（会話履歴を渡す）
             with st.spinner("考え中..."):
-                answer = get_ai_response(question, claude_api_key, context)
+                answer = get_ai_response(
+                    question, 
+                    claude_api_key, 
+                    context, 
+                    st.session_state.conversation_history
+                )
+            
+            # 会話履歴に追加
+            add_to_history(question, answer)
             
             st.write(f"**回答:** {answer}")
             
@@ -837,6 +999,9 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
                         play_audio_autoplay(audio_bytes)
                 except Exception as e:
                     st.error(f"音声生成エラー: {str(e)}")
+    
+    # 会話履歴を表示
+    show_conversation_history()
 
 # ====================
 # メインアプリ
