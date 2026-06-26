@@ -82,7 +82,7 @@ def extract_pdf_text(pdf_file):
         return f"PDF読み込みエラー: {str(e)}", 0
 
 # ====================
-# Web検索（改善版）
+# Web検索
 # ====================
 def web_search(query, max_results=3):
     try:
@@ -145,7 +145,12 @@ def get_ai_response(question, api_key, context="", history=None):
     
     system_prompt = (
         f"あなたは「バード」という名前のAIアシスタントです。\n\n"
-        f"以下の人物の考え方で回答してください：\n\n{MY_THINKING}"
+        f"以下の人物の考え方で回答してください：\n\n{MY_THINKING}\n\n"
+        f"【回答時の注意点】\n"
+        f"- 専門用語や読みにくい言葉には、カッコ書きで読み方を添えてください\n"
+        f"- 例：有給休暇（ゆうきゅうきゅうか）\n"
+        f"- 例：申請（しんせい）\n"
+        f"- 数字は読み方を意識してください"
     )
     
     if context:
@@ -172,7 +177,7 @@ def get_ai_response(question, api_key, context="", history=None):
     return message.content[0].text
 
 # ====================
-# ElevenLabs音声合成
+# テキスト前処理（音声読み上げ用）
 # ====================
 def preprocess_text_for_speech(text):
     """音声読み上げのためにテキストを前処理"""
@@ -185,8 +190,10 @@ def preprocess_text_for_speech(text):
     text = text.replace('\r', '')
     
     # 連続する句読点を1つに
-    text = text.replace('。。', '。')
-    text = text.replace('、、', '。')
+    while '。。' in text:
+        text = text.replace('。。', '。')
+    while '、、' in text:
+        text = text.replace('、、', '。')
     
     # URLを除去
     text = re.sub(r'https?://\S+', '', text)
@@ -195,12 +202,15 @@ def preprocess_text_for_speech(text):
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'\*(.+?)\*', r'\1', text)
     text = re.sub(r'`(.+?)`', r'\1', text)
+    text = re.sub(r'#{1,6}\s*', '', text)
     
     # 鉤括弧を読みやすく
     text = text.replace('【', '')
     text = text.replace('】', '')
     text = text.replace('「', '')
     text = text.replace('」', '')
+    text = text.replace('『', '')
+    text = text.replace('』', '')
     
     # 記号の処理
     text = text.replace('→', '、')
@@ -209,11 +219,28 @@ def preprocess_text_for_speech(text):
     text = text.replace('•', '、')
     text = text.replace('※', '')
     text = text.replace('♪', '')
+    text = text.replace('★', '')
+    text = text.replace('☆', '')
+    
+    # 数字の読み方を改善
+    text = re.sub(r'(\d+)円', r'\1えん', text)
+    text = re.sub(r'(\d+)人', r'\1にん', text)
+    text = re.sub(r'(\d+)件', r'\1けん', text)
+    text = re.sub(r'(\d+)回', r'\1かい', text)
+    text = re.sub(r'(\d+)時間', r'\1じかん', text)
+    text = re.sub(r'(\d+)日', r'\1にち', text)
+    text = re.sub(r'(\d+)月', r'\1がつ', text)
+    text = re.sub(r'(\d+)年', r'\1ねん', text)
+    text = re.sub(r'(\d+)%', r'\1パーセント', text)
+    text = re.sub(r'(\d+):(\d+)', r'\1時\2分', text)
     
     return text
 
+# ====================
+# ElevenLabs音声合成
+# ====================
 def synthesize_voice(text, api_key, voice_id):
-    """ElevenLabsで音声を合成"""
+    """ElevenLabsで音声を合成（品質向上版）"""
     
     client = ElevenLabs(api_key=api_key)
     
@@ -221,38 +248,55 @@ def synthesize_voice(text, api_key, voice_id):
     processed_text = preprocess_text_for_speech(text)
     
     # 長いテキストの場合は分割
-    max_chars = 500
+    max_chars = 400
+    
     if len(processed_text) > max_chars:
         sentences = []
-        current_sentence = ""
+        current = ""
+        
         for char in processed_text:
-            current_sentence += char
-            if char in ['。', '！', '？', '.', '!', '?']:
-                if len(current_sentence) > 50:
-                    sentences.append(current_sentence)
-                    current_sentence = ""
-        if current_sentence:
-            sentences.append(current_sentence)
+            current += char
+            if char in ['。', '！', '？']:
+                if len(current) >= 30:
+                    sentences.append(current)
+                    current = ""
+        
+        if current:
+            sentences.append(current)
         
         audio_parts = []
+        
         for sentence in sentences:
             if sentence.strip():
                 try:
                     audio_generator = client.text_to_speech.convert(
                         text=sentence.strip(),
                         voice_id=voice_id,
-                        model_id="eleven_multilingual_v2"
+                        model_id="eleven_multilingual_v2",
+                        voice_settings={
+                            "stability": 0.4,
+                            "similarity_boost": 0.7,
+                            "style": 0.0,
+                            "use_speaker_boost": True
+                        }
                     )
                     audio_parts.append(b''.join(audio_generator))
                 except Exception as e:
-                    print(f"音声合成エラー（分割）: {str(e)}")
+                    print(f"音声合成エラー: {str(e)}")
         
         return b''.join(audio_parts) if audio_parts else b''
+    
     else:
         audio_generator = client.text_to_speech.convert(
             text=processed_text,
             voice_id=voice_id,
-            model_id="eleven_multilingual_v2"
+            model_id="eleven_multilingual_v2",
+            voice_settings={
+                "stability": 0.4,
+                "similarity_boost": 0.7,
+                "style": 0.0,
+                "use_speaker_boost": True
+            }
         )
         return b''.join(audio_generator)
 
@@ -317,11 +361,14 @@ def show_conversation_history():
         with st.expander("📝 会話履歴を見る", expanded=False):
             for i, msg in enumerate(reversed(st.session_state.conversation_history)):
                 st.write(f"**質問:** {msg['user']}")
-                st.write(f"**回答:** {msg['assistant'][:200]}..." if len(msg['assistant']) > 200 else f"**回答:** {msg['assistant']}")
+                if len(msg['assistant']) > 200:
+                    st.write(f"**回答:** {msg['assistant'][:200]}...")
+                else:
+                    st.write(f"**回答:** {msg['assistant']}")
                 st.divider()
 
 # ====================
-# 音声認識コンポーネント（マイク押下モード）
+# 音声認識コンポーネント
 # ====================
 def create_speech_component(key="speech"):
     """音声認識コンポーネント（コピーボタン付き）"""
@@ -663,42 +710,76 @@ def show_sidebar():
         
         pdf_categories = ["就業規則", "性格情報", "仕事マニュアル", "その他"]
         
+        # PDF追加（複数ファイル対応）
         with st.sidebar.expander("➕ PDFを追加"):
-            uploaded_pdf = st.file_uploader("PDFをアップロード", type="pdf")
+            uploaded_pdfs = st.file_uploader(
+                "PDFをアップロード（複数可）", 
+                type="pdf", 
+                accept_multiple_files=True
+            )
+            
             pdf_category = st.selectbox("カテゴリ", pdf_categories)
             
-            if uploaded_pdf and st.button("追加"):
-                pdf_text, total_pages = extract_pdf_text(uploaded_pdf)
-                if "エラー" not in pdf_text:
-                    existing_names = [doc["name"] for doc in st.session_state.pdf_documents]
-                    if uploaded_pdf.name not in existing_names:
-                        st.session_state.pdf_documents.append({
-                            "name": uploaded_pdf.name,
-                            "category": pdf_category,
-                            "text": pdf_text[:MAX_PDF_CHARS],
-                            "total_pages": total_pages,
-                            "total_chars": len(pdf_text)
-                        })
-                        st.success(f"「{uploaded_pdf.name}」を追加")
+            if uploaded_pdfs:
+                st.write(f"**選択されたファイル:** {len(uploaded_pdfs)}個")
+                for pdf in uploaded_pdfs:
+                    st.write(f"- {pdf.name}")
+            
+            if st.button("追加"):
+                if uploaded_pdfs:
+                    added_count = 0
+                    skipped_count = 0
+                    
+                    for uploaded_pdf in uploaded_pdfs:
+                        pdf_text, total_pages = extract_pdf_text(uploaded_pdf)
+                        
+                        if "エラー" not in pdf_text:
+                            existing_names = [doc["name"] for doc in st.session_state.pdf_documents]
+                            
+                            if uploaded_pdf.name not in existing_names:
+                                st.session_state.pdf_documents.append({
+                                    "name": uploaded_pdf.name,
+                                    "category": pdf_category,
+                                    "text": pdf_text[:MAX_PDF_CHARS],
+                                    "total_pages": total_pages,
+                                    "total_chars": len(pdf_text)
+                                })
+                                added_count += 1
+                            else:
+                                skipped_count += 1
+                    
+                    if added_count > 0:
+                        st.success(f"{added_count}個のPDFを追加しました")
+                    if skipped_count > 0:
+                        st.warning(f"{skipped_count}個のファイルは既に追加済みです")
+                    
+                    if added_count > 0:
                         st.rerun()
-                    else:
-                        st.warning("既に追加されています")
                 else:
-                    st.error(pdf_text)
+                    st.warning("PDFを選択してください")
         
+        # PDF一覧（カテゴリー別）
         with st.sidebar.expander("📚 登録済みPDF"):
             if st.session_state.pdf_documents:
-                for i, doc in enumerate(st.session_state.pdf_documents):
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.write(f"📄 {doc['name']} ({doc['total_pages']}ページ)")
-                    with col2:
-                        if st.button("削除", key=f"del_{i}"):
-                            st.session_state.pdf_documents.pop(i)
-                            st.rerun()
+                for category in pdf_categories:
+                    category_docs = [doc for doc in st.session_state.pdf_documents if doc["category"] == category]
+                    if category_docs:
+                        st.write(f"**{category}**")
+                        for doc in category_docs:
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.write(f"📄 {doc['name']} ({doc['total_pages']}ページ)")
+                            with col2:
+                                if st.button("削除", key=f"del_{doc['name']}"):
+                                    st.session_state.pdf_documents = [
+                                        d for d in st.session_state.pdf_documents if d['name'] != doc['name']
+                                    ]
+                                    st.rerun()
+                        st.divider()
             else:
                 st.write("PDFが登録されていません")
         
+        # カテゴリ選択（検索用）
         if st.session_state.pdf_documents:
             st.sidebar.subheader("使用するカテゴリ")
             categories = ["すべて"] + pdf_categories
@@ -846,7 +927,7 @@ def show_push_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voice_id):
     st.write("📝 **認識されたテキストを貼り付けて送信**")
     st.caption("👆 上の「📋コピー」ボタンを押してから、ここに貼り付けてください")
     
-    # テキストエリア（セッション状態の値を使用）
+    # テキストエリア
     recognized_text = st.text_area(
         "認識されたテキスト（Ctrl+V または Cmd+V で貼り付け）", 
         value=st.session_state.get("speech_text", ""),
@@ -936,7 +1017,7 @@ def show_continuous_mic_mode(claude_api_key, elevenlabs_api_key, elevenlabs_voic
     st.write("📝 **認識されたテキストを貼り付けて送信**")
     st.caption("👆 上の「📋コピー」ボタンを押してから、ここに貼り付けてください")
     
-    # テキストエリア（セッション状態の値を使用）
+    # テキストエリア
     recognized_text = st.text_area(
         "認識された質問（Ctrl+V または Cmd+V で貼り付け）", 
         value=st.session_state.get("speech_text", ""),
